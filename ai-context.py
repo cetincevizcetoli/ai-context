@@ -148,9 +148,21 @@ def main():
     args = parser.parse_args()
 
     if args.help:
-        print(f"ai-context v{VERSION} | Yardım Menüsü")
+        print(f"\n🚀 ai-context v{VERSION} | Yardım Menüsü")
+        print("-" * 40)
         print("Kullanım: ai-context [path] [options]")
-        print("Örn: ai-context -to -c")
+        print("\nSeçenekler:")
+        print("  -to       Sadece klasör yapısını dök (içerikleri okumaz)")
+        print("  -c        Sonucu otomatik olarak panoya kopyalar")
+        print("  -tk       Çıktının tahmini token maliyetini gösterir")
+        print("  -t        Sadece belirli dosya isimlerini hedefler (örn: -t index.php)")
+        print("  -xd       Belirli klasörleri tarama dışı bırakır")
+        print("  -xf       Belirli dosyaları tarama dışı bırakır")
+        print("  -xe       Belirli uzantıları tarama dışı bırakır")
+        print("  -u        Güvenli listeyi (whitelist) bypass eder, her şeyi okur")
+        print("  -h        Bu yardım menüsünü gösterir")
+        print("\nÖrnek: ai-context . -to -c")
+        print("-" * 40)
         return
 
     root = os.path.abspath(args.path)
