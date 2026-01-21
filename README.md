@@ -1,4 +1,4 @@
-# 🤖 AI-Context (v11.6)
+# 🤖 AI-Context (v1.0)
 
 **TR:** `ai-context`, yerel kaynak kodlarınızı Yapay Zeka (LLM) modellerine (Claude, ChatGPT, Gemini vb.) aktarmak için optimize edilmiş profesyonel bir "bağlam döküm" (context dumper) aracıdır. Tüm projenizi veya seçtiğiniz dosyaları tek bir Markdown dosyasına dönüştürür, panoya kopyalar ve token sayısını hesaplar.
 
