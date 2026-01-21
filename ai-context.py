@@ -5,9 +5,10 @@ import sys
 import subprocess
 import platform
 import io
+import locale
 from datetime import datetime
 
-VERSION = "11.6"
+VERSION = "11.7"
 
 # Windows terminalinde emojilerin düzgün görünmesi için UTF-8 zorlaması
 if platform.system() == "Windows":
@@ -125,7 +126,6 @@ def write_report(root_path, files, ignored_dirs, clipboard=False, show_tokens=Fa
     print(f"📄 Rapor kaydedildi: {filename}")
 
 def main():
-    # Çift tire kullanımına karşı uyarı kontrolü
     for arg in sys.argv:
         if arg.startswith('--') and arg not in ['--help']:
             print(f"⚠️ HATA: Geçersiz argüman formatı '{arg}'. Lütfen tek tire '-' kullanın.")
@@ -148,21 +148,46 @@ def main():
     args = parser.parse_args()
 
     if args.help:
-        print(f"\n🚀 ai-context v{VERSION} | Yardım Menüsü")
-        print("-" * 40)
-        print("Kullanım: ai-context [path] [options]")
-        print("\nSeçenekler:")
-        print("  -to       Sadece klasör yapısını dök (içerikleri okumaz)")
-        print("  -c        Sonucu otomatik olarak panoya kopyalar")
-        print("  -tk       Çıktının tahmini token maliyetini gösterir")
-        print("  -t        Sadece belirli dosya isimlerini hedefler (örn: -t index.php)")
-        print("  -xd       Belirli klasörleri tarama dışı bırakır")
-        print("  -xf       Belirli dosyaları tarama dışı bırakır")
-        print("  -xe       Belirli uzantıları tarama dışı bırakır")
-        print("  -u        Güvenli listeyi (whitelist) bypass eder, her şeyi okur")
-        print("  -h        Bu yardım menüsünü gösterir")
-        print("\nÖrnek: ai-context . -to -c")
-        print("-" * 40)
+        # Sistem dilini kontrol et (Örn: tr_TR, en_US)
+        try:
+            sys_lang = locale.getdefaultlocale()[0]
+        except:
+            sys_lang = "en"
+
+        is_tr = sys_lang and sys_lang.startswith("tr")
+
+        if is_tr:
+            print(f"\n🚀 ai-context v{VERSION} | Yardım Menüsü")
+            print("-" * 45)
+            print("Kullanım: ai-context [dizin] [seçenekler]")
+            print("\nSeçenekler:")
+            print("  -to       Sadece klasör yapısını dök (içerik okumaz)")
+            print("  -c        Sonucu otomatik olarak panoya kopyalar")
+            print("  -tk       Çıktının tahmini token maliyetini gösterir")
+            print("  -t        Sadece belirli dosya isimlerini hedefler")
+            print("  -xd       Belirli klasörleri tarama dışı bırakır")
+            print("  -xf       Belirli dosyaları tarama dışı bırakır")
+            print("  -xe       Belirli uzantıları tarama dışı bırakır")
+            print("  -u        Güvenli listeyi bypass eder, her şeyi okur")
+            print("  -h        Bu yardım menüsünü gösterir")
+            print("\nÖrnek: ai-context . -to -c")
+        else:
+            print(f"\n🚀 ai-context v{VERSION} | Help Menu")
+            print("-" * 45)
+            print("Usage: ai-context [path] [options]")
+            print("\nOptions:")
+            print("  -to       Tree-only mode (no file contents)")
+            print("  -c        Copy output to clipboard automatically")
+            print("  -tk       Show estimated token count")
+            print("  -t        Target specific filenames")
+            print("  -xd       Exclude specific directories")
+            print("  -xf       Exclude specific files")
+            print("  -xe       Exclude specific extensions")
+            print("  -u        Unsafe mode (read all files)")
+            print("  -h        Show this help menu")
+            print("\nExample: ai-context . -to -c")
+        
+        print("-" * 45)
         return
 
     root = os.path.abspath(args.path)
