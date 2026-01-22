@@ -8,7 +8,7 @@ import io
 import locale
 from datetime import datetime
 
-VERSION = "11.8"
+VERSION = "11.9"
 
 # Windows terminalinde emojilerin düzgün görünmesi için UTF-8 zorlaması
 if platform.system() == "Windows":
@@ -38,7 +38,7 @@ DEFAULT_IGNORE_FILES = {
 ALLOWED_EXTS = {
     ".py", ".php", ".js", ".ts", ".html", ".css", ".sql", ".md", ".txt", 
     ".json", ".yaml", ".yml", ".htaccess", ".env", ".tsx", ".jsx", ".vue", 
-    ".ini", ".conf", ".sh"
+    ".ini", ".conf", ".sh", ".log"
 }
 
 def copy_to_clipboard(text):
@@ -110,14 +110,12 @@ def write_report(root_path, files, ignored_dirs, clipboard=False, show_tokens=Fa
 
     report_text = output.getvalue()
     
-    # Raporu her zaman Masaüstü'ndeki ai-reports klasörüne yönlendir
     desktop = os.path.join(os.path.expanduser("~"), "Desktop")
     out_dir = os.path.join(desktop, "ai-reports")
     
     try:
         os.makedirs(out_dir, exist_ok=True)
     except:
-        # Masaüstü erişimi yoksa (OneDrive taşıma hatası vb.), ana kullanıcı dizinine düş
         out_dir = os.path.join(os.path.expanduser("~"), "ai-context-reports")
         os.makedirs(out_dir, exist_ok=True)
 
@@ -144,10 +142,10 @@ def main():
     parser.add_argument("-h", "-help", action="store_true", dest="help")
     parser.add_argument("path", nargs="?", default=os.getcwd())
     parser.add_argument("-t", "-target", nargs="+", dest="target")
+    parser.add_argument("-i", "-include-ext", nargs="+", default=[], dest="include_ext") # YENİ
     parser.add_argument("-xd", "-exclude-dir", nargs="+", default=[], dest="exclude_dir")
     parser.add_argument("-xf", "-exclude-file", nargs="+", default=[], dest="exclude_file")
     parser.add_argument("-xe", "-exclude-ext", nargs="+", default=[], dest="exclude_ext")
-    parser.add_argument("-id", "-include-dir", nargs="+", dest="include_dir")
     parser.add_argument("-u", "-unsafe", action="store_true", dest="unsafe")
     parser.add_argument("-c", "-clipboard", action="store_true", dest="clipboard")
     parser.add_argument("-tk", "-tokens", action="store_true", dest="tokens")
@@ -156,48 +154,37 @@ def main():
     args = parser.parse_args()
 
     if args.help:
-        try:
-            sys_lang = locale.getdefaultlocale()[0]
-        except:
-            sys_lang = "en"
+        try: sys_lang = locale.getdefaultlocale()[0]
+        except: sys_lang = "en"
         is_tr = sys_lang and sys_lang.startswith("tr")
         if is_tr:
             print(f"\n🚀 ai-context v{VERSION} | Yardım Menüsü")
             print("-" * 45)
-            print("Kullanım: ai-context [dizin] [seçenekler]")
-            print("\nSeçenekler:")
-            print("  -to       Sadece klasör yapısını dök (içerik okumaz)")
-            print("  -c        Sonucu otomatik olarak panoya kopyalar")
-            print("  -tk       Çıktının tahmini token maliyetini gösterir")
-            print("  -t        Sadece belirli dosya isimlerini hedefler")
-            print("  -xd       Belirli klasörleri tarama dışı bırakır")
-            print("  -xf       Belirli dosyaları tarama dışı bırakır")
-            print("  -xe       Belirli uzantıları tarama dışı bırakır")
-            print("  -u        Güvenli listeyi bypass eder, her şeyi okur")
-            print("  -h        Bu yardım menüsünü gösterir")
-            print("\nÖrnek: ai-context . -to -c")
+            print("  -i        Listede olmayan uzantıları dahil et (Örn: -i log cfg)")
+            print("  -t        Sadece belirli dosyaları hedefle")
+            print("  -to       Sadece klasör yapısını dök")
+            print("  -c        Sonucu panoya kopyala")
+            print("  -tk       Token maliyetini göster")
+            print("  -u        Güvenli listeyi bypass et (Tüm metinleri oku)")
         else:
             print(f"\n🚀 ai-context v{VERSION} | Help Menu")
             print("-" * 45)
-            print("Usage: ai-context [path] [options]")
-            print("\nOptions:")
-            print("  -to       Tree-only mode (no file contents)")
-            print("  -c        Copy output to clipboard automatically")
-            print("  -tk       Show estimated token count")
-            print("  -t        Target specific filenames")
-            print("  -xd       Exclude specific directories")
-            print("  -xf       Exclude specific files")
-            print("  -xe       Exclude specific extensions")
-            print("  -u        Unsafe mode (read all files)")
-            print("  -h        Show this help menu")
-            print("\nExample: ai-context . -to -c")
-        print("-" * 45)
+            print("  -i        Include extra extensions (e.g., -i log cfg)")
+            print("  -t        Target specific files")
+            print("  -to       Tree-only mode")
+            print("  -c        Copy to clipboard")
+            print("  -tk       Show token count")
+            print("  -u        Unsafe mode (Read all text files)")
         return
 
     root = os.path.abspath(args.path)
     exclude_dirs = DEFAULT_IGNORE_DIRS.union(set(args.exclude_dir))
     exclude_files = DEFAULT_IGNORE_FILES.union(set(args.exclude_file))
     exclude_exts = set(args.exclude_ext)
+    
+    # Yeni eklenen uzantıları listeye dahil et
+    extra_exts = {f".{e.strip('.')}" for e in args.include_ext}
+    effective_allowed = ALLOWED_EXTS.union(extra_exts)
     
     found_files = []
     for r, dirs, files in os.walk(root):
@@ -207,9 +194,8 @@ def main():
             ext = os.path.splitext(f)[1].lower()
             if args.target and f not in args.target: continue
             if f in exclude_files or ext in exclude_exts: continue
-            if not args.tree_only and not args.unsafe and ext not in ALLOWED_EXTS: continue
+            if not args.tree_only and not args.unsafe and ext not in effective_allowed: continue
             if ext in KNOWN_BINARY_EXTENSIONS: continue
-            if args.include_dir and not any(rel_path.startswith(d) for d in args.include_dir): continue
             found_files.append(rel_path)
 
     write_report(root, sorted(found_files), exclude_dirs, args.clipboard, args.tokens, args.tree_only)
