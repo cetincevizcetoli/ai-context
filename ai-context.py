@@ -8,7 +8,7 @@ import io
 import locale
 from datetime import datetime
 
-VERSION = "11.7"
+VERSION = "11.8"
 
 # Windows terminalinde emojilerin düzgün görünmesi için UTF-8 zorlaması
 if platform.system() == "Windows":
@@ -98,9 +98,7 @@ def write_report(root_path, files, ignored_dirs, clipboard=False, show_tokens=Fa
     output.write(generate_tree_text(tree_dict))
     output.write("```\n\n---\n")
 
-    if tree_only:
-        output.write("\n> [MOD: TREE-ONLY] Bu rapor sadece dosya yapısını içerir. İçerikler dahil edilmemiştir.\n")
-    else:
+    if not tree_only:
         for rel_path in files:
             full_path = os.path.join(root_path, rel_path)
             ext = os.path.splitext(rel_path)[1].lower().replace('.','') or "text"
@@ -111,9 +109,19 @@ def write_report(root_path, files, ignored_dirs, clipboard=False, show_tokens=Fa
             except: continue
 
     report_text = output.getvalue()
-    out_dir = os.path.join(root_path, "reports")
-    os.makedirs(out_dir, exist_ok=True)
-    filename = os.path.join(out_dir, f"{f_prefix}_{datetime.now().strftime('%H%M')}.md")
+    
+    # Raporu her zaman Masaüstü'ndeki ai-reports klasörüne yönlendir
+    desktop = os.path.join(os.path.expanduser("~"), "Desktop")
+    out_dir = os.path.join(desktop, "ai-reports")
+    
+    try:
+        os.makedirs(out_dir, exist_ok=True)
+    except:
+        # Masaüstü erişimi yoksa (OneDrive taşıma hatası vb.), ana kullanıcı dizinine düş
+        out_dir = os.path.join(os.path.expanduser("~"), "ai-context-reports")
+        os.makedirs(out_dir, exist_ok=True)
+
+    filename = os.path.join(out_dir, f"{f_prefix}_{datetime.now().strftime('%H%M%S')}.md")
     
     with open(filename, "w", encoding="utf-8-sig") as f:
         f.write(report_text)
@@ -148,14 +156,11 @@ def main():
     args = parser.parse_args()
 
     if args.help:
-        # Sistem dilini kontrol et (Örn: tr_TR, en_US)
         try:
             sys_lang = locale.getdefaultlocale()[0]
         except:
             sys_lang = "en"
-
         is_tr = sys_lang and sys_lang.startswith("tr")
-
         if is_tr:
             print(f"\n🚀 ai-context v{VERSION} | Yardım Menüsü")
             print("-" * 45)
@@ -186,7 +191,6 @@ def main():
             print("  -u        Unsafe mode (read all files)")
             print("  -h        Show this help menu")
             print("\nExample: ai-context . -to -c")
-        
         print("-" * 45)
         return
 
