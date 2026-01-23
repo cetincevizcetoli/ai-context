@@ -1,0 +1,2 @@
+[console_scripts]
+ai-context = ai_context:main

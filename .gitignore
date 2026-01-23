@@ -1,3 +1,6 @@
-reports/
+.venv/
 __pycache__/
 *.pyc
+.idea/
+.vscode/
+ai-reports/

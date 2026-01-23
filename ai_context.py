@@ -8,7 +8,7 @@ import io
 import locale
 from datetime import datetime
 
-VERSION = "1.0"
+VERSION = "1.1.0"
 
 # Windows terminalinde emojilerin düzgün görünmesi için UTF-8 zorlaması
 if platform.system() == "Windows":
@@ -112,6 +112,7 @@ def write_report(root_path, files, ignored_dirs, clipboard=False, show_tokens=Fa
     
     desktop = os.path.join(os.path.expanduser("~"), "Desktop")
     out_dir = os.path.join(desktop, "ai-reports")
+    print(f"✅ Toplam {len(files)} dosya başarıyla işlendi.")
     
     try:
         os.makedirs(out_dir, exist_ok=True)
