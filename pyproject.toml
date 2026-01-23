@@ -1,0 +1,21 @@
+[build-system]
+requires = ["setuptools>=61.0"]
+build-backend = "setuptools.build_meta"
+
+[project]
+name = "ai-context"
+version = "1.1.0"
+authors = [
+  { name="Ahmet Çetin" },
+]
+description = "AI modelleri için proje dosyalarını metin belgesine dönüştüren yardımcı araç."
+readme = "README.md"
+requires-python = ">=3.7"
+classifiers = [
+    "Programming Language :: Python :: 3",
+    "License :: OSI Approved :: MIT License",
+    "Operating System :: OS Independent",
+]
+
+[project.scripts]
+ai-context = "ai_context:main"
