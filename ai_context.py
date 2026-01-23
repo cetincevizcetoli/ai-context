@@ -8,7 +8,8 @@ import io
 import locale
 from datetime import datetime
 
-VERSION = "1.1.0"
+# Versiyon Güncellendi
+VERSION = "1.2.0"
 
 # Windows terminalinde emojilerin düzgün görünmesi için UTF-8 zorlaması
 if platform.system() == "Windows":
@@ -112,7 +113,6 @@ def write_report(root_path, files, ignored_dirs, clipboard=False, show_tokens=Fa
     
     desktop = os.path.join(os.path.expanduser("~"), "Desktop")
     out_dir = os.path.join(desktop, "ai-reports")
-    print(f"✅ Toplam {len(files)} dosya başarıyla işlendi.")
     
     try:
         os.makedirs(out_dir, exist_ok=True)
@@ -131,6 +131,7 @@ def write_report(root_path, files, ignored_dirs, clipboard=False, show_tokens=Fa
         if copy_to_clipboard(report_text): print("✅ Sonuç panoya kopyalandı.")
     
     print(f"📄 Rapor kaydedildi: {filename}")
+    print(f"✅ Toplam {len(files)} dosya başarıyla işlendi.")
 
 def main():
     for arg in sys.argv:
@@ -151,6 +152,8 @@ def main():
     parser.add_argument("-c", "-clipboard", action="store_true", dest="clipboard")
     parser.add_argument("-tk", "-tokens", action="store_true", dest="tokens")
     parser.add_argument("-to", "-tree-only", action="store_true", dest="tree_only")
+    # Yeni Özellik: Max Size
+    parser.add_argument("-ms", "-max-size", type=int, default=None, dest="max_size")
 
     args = parser.parse_args()
 
@@ -163,6 +166,7 @@ def main():
             print("-" * 55)
             print("Kullanım: ai-context [yol] [seçenekler]")
             print("\nTemel Seçenekler:")
+            print("  -ms [kb]         Belirlenen KB'dan büyük dosyaları atla")
             print("  -i [uzantı...]   Listede olmayan uzantıları ekle (Örn: -i log cfg)")
             print("  -t [dosya...]    Sadece belirli dosyaları tara")
             print("  -to              Sadece klasör yapısını çıkar (içerik okumaz)")
@@ -180,6 +184,7 @@ def main():
             print("-" * 55)
             print("Usage: ai-context [path] [options]")
             print("\nCore Options:")
+            print("  -ms [kb]         Skip files larger than KB")
             print("  -i [ext...]      Include extra extensions (e.g., -i log cfg)")
             print("  -t [file...]     Target specific files only")
             print("  -to              Tree-only mode (no content)")
@@ -207,7 +212,16 @@ def main():
     for r, dirs, files in os.walk(root):
         dirs[:] = [d for d in dirs if not d.startswith(".") and d not in exclude_dirs]
         for f in files:
-            rel_path = os.path.relpath(os.path.join(r, f), root).replace("\\", "/")
+            full_path = os.path.join(r, f)
+            # DOSYA BOYUTU KONTROLÜ
+            try:
+                file_size_kb = os.path.getsize(full_path) / 1024
+                if args.max_size and file_size_kb > args.max_size:
+                    continue
+            except OSError:
+                continue
+
+            rel_path = os.path.relpath(full_path, root).replace("\\", "/")
             ext = os.path.splitext(f)[1].lower()
             if args.target and f not in args.target: continue
             if f in exclude_files or ext in exclude_exts: continue

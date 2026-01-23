@@ -1,4 +1,4 @@
-# 🤖 AI-Context (v11.9)
+# 🤖 AI-Context (v1.2.0)
 
 **TR:** `ai-context`, yerel kaynak kodlarınızı Yapay Zeka (LLM) modellerine (Claude, ChatGPT, Gemini vb.) aktarmak için optimize edilmiş profesyonel bir "bağlam döküm" (context dumper) aracıdır. Tüm projenizi veya seçtiğiniz dosyaları tek bir Markdown dosyasına dönüştürür, panoya kopyalar ve token sayısını hesaplar. Raporlar, yetki hatalarını önlemek için otomatik olarak Masaüstü'ndeki `ai-reports` klasörüne kaydedilir.
 
@@ -8,6 +8,7 @@
 
 ## 🚀 Özellikler / Features
 
+- **📏 Dinamik Boyut Filtresi / Dynamic Size Filter:** `-ms` parametresi ile belirlediğiniz KB'dan büyük dosyaları otomatik olarak atlayabilirsiniz. / Skip files larger than specified KB using `-ms`.
 - **📂 Masaüstü Çıktısı / Desktop Output:** Raporlar artık her zaman Masaüstü'ne kaydedilir, böylece Program Files gibi klasörlerde yetki hatası almazsınız.
 - **➕ Dinamik Dahil Etme / Dynamic Include:** `-i` parametresi ile listede olmayan özel uzantıları (.log, .cfg vb.) anlık olarak sürece dahil edebilirsiniz.
 - **📂 Tree-Only Modu:** Projenin sadece klasör ağacını döküm alır (İçerik okumaz). / Dumps only folder structure (No content).
@@ -20,12 +21,17 @@
 
 ## 🛠 Kurulum / Installation
 
-### 1. Geliştirici Modunda Yükleme (Önerilen / Recommended)
-Klasörün içine girin ve terminalde şu komutu çalıştırın. Bu sayede kodda yaptığınız değişiklikler anında komut satırına yansır:
-pip install -e .
+### 1. Diğer Kullanıcılar İçin (Normal Kurulum / Upgrade)
+GitHub üzerinden doğrudan en güncel sürümü yüklemek veya güncellemek için:
+```bash
+pip install --upgrade git+[https://github.com/cetincevizcetoli/ai-context.git](https://github.com/cetincevizcetoli/ai-context.git)
+```
 
-### 2. Manuel Kullanım / Manual Usage
-python ai_context.py . -c -tk
+### 2. Geliştirici Modunda Yükleme (Önerilen / Recommended)
+Klasörün içine girin ve terminalde şu komutu çalıştırın. Bu sayede kodda yaptığınız değişiklikler anında komut satırına yansır:
+```bash
+pip install -e .
+```
 
 ---
 
@@ -34,21 +40,25 @@ python ai_context.py . -c -tk
 > **Önemli / Important:** Tüm parametreler tek tire (-) ile kullanılmaktadır.
 > All parameters are used with a single dash (-).
 
+**TR: 500 KB'dan büyük dosyaları atla ve kopyala:**
+**EN: Skip files larger than 500 KB and copy:**
+`ai-context -ms 500 -c`
+
 **TR: Özel uzantıları (log, cfg) sürece dahil et:**
 **EN: Include extra extensions (log, cfg):**
-ai-context -i log cfg -c
+`ai-context -i log cfg -c`
 
 **TR: Belirli bir dosyayı hedefle ve kopyala:**
 **EN: Target a specific file and copy:**
-ai-context -t xigncode_base64.txt -c
+`ai-context -t main.py -c`
 
 **TR: Sadece klasör yapısını al ve panoya kopyala:**
 **EN: Get folder structure only and copy to clipboard:**
-ai-context -to -c
+`ai-context -to -c`
 
 **TR: Tüm projeyi tara, token sayısını göster ve kopyala:**
 **EN: Scan project, show tokens, and copy:**
-ai-context . -c -tk
+`ai-context . -c -tk`
 
 ---
 
@@ -56,6 +66,7 @@ ai-context . -c -tk
 
 | Komut / Cmd | Açıklama (TR) | Description (EN) |
 | :--- | :--- | :--- |
+| -ms | Maksimum dosya boyutu (KB) | Max file size filter (KB) |
 | -i | Özel uzantı ekle | Include extra extensions |
 | -to | Sadece klasör yapısını dök | Tree-only mode (structure only) |
 | -c | Panoya kopyala | Copy to clipboard |
@@ -67,15 +78,9 @@ ai-context . -c -tk
 | -u | Tüm dosya tiplerini oku | Unsafe mode (Read all extensions) |
 | -h | Yardım menüsünü göster | Show help menu |
 
----
 
-## 🚀 Git Güncelleme / Git Update
-
-git add .
-git commit -m "Update: v11.9 - Desktop output and dynamic include feature"
-git push origin main --force
 
 ---
 
 ## ⚖️ Lisans / License
-MIT License. Created by [Ahmet Çetin].
+MIT License. Created by Ahmet Çetin.
