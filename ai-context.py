@@ -8,7 +8,7 @@ import io
 import locale
 from datetime import datetime
 
-VERSION = "11.9"
+VERSION = "1.0"
 
 # Windows terminalinde emojilerin düzgün görünmesi için UTF-8 zorlaması
 if platform.system() == "Windows":
@@ -142,7 +142,7 @@ def main():
     parser.add_argument("-h", "-help", action="store_true", dest="help")
     parser.add_argument("path", nargs="?", default=os.getcwd())
     parser.add_argument("-t", "-target", nargs="+", dest="target")
-    parser.add_argument("-i", "-include-ext", nargs="+", default=[], dest="include_ext") # YENİ
+    parser.add_argument("-i", "-include-ext", nargs="+", default=[], dest="include_ext")
     parser.add_argument("-xd", "-exclude-dir", nargs="+", default=[], dest="exclude_dir")
     parser.add_argument("-xf", "-exclude-file", nargs="+", default=[], dest="exclude_file")
     parser.add_argument("-xe", "-exclude-ext", nargs="+", default=[], dest="exclude_ext")
@@ -159,22 +159,39 @@ def main():
         is_tr = sys_lang and sys_lang.startswith("tr")
         if is_tr:
             print(f"\n🚀 ai-context v{VERSION} | Yardım Menüsü")
-            print("-" * 45)
-            print("  -i        Listede olmayan uzantıları dahil et (Örn: -i log cfg)")
-            print("  -t        Sadece belirli dosyaları hedefle")
-            print("  -to       Sadece klasör yapısını dök")
-            print("  -c        Sonucu panoya kopyala")
-            print("  -tk       Token maliyetini göster")
-            print("  -u        Güvenli listeyi bypass et (Tüm metinleri oku)")
+            print("-" * 55)
+            print("Kullanım: ai-context [yol] [seçenekler]")
+            print("\nTemel Seçenekler:")
+            print("  -i [uzantı...]   Listede olmayan uzantıları ekle (Örn: -i log cfg)")
+            print("  -t [dosya...]    Sadece belirli dosyaları tara")
+            print("  -to              Sadece klasör yapısını çıkar (içerik okumaz)")
+            print("  -c               Sonucu panoya kopyala")
+            print("  -tk              Tahmini token sayısını göster")
+            print("  -u               Güvenli listeyi bypass et (Tüm metinleri oku)")
+            print("\nFiltreleme Seçenekleri:")
+            print("  -xd [klasör...]  Belirli klasörleri hariç tut")
+            print("  -xf [dosya...]   Belirli dosyaları hariç tut")
+            print("  -xe [uzantı...]  Belirli uzantıları hariç tut")
+            print("\nDiğer:")
+            print("  -h               Bu yardım menüsünü gösterir")
         else:
             print(f"\n🚀 ai-context v{VERSION} | Help Menu")
-            print("-" * 45)
-            print("  -i        Include extra extensions (e.g., -i log cfg)")
-            print("  -t        Target specific files")
-            print("  -to       Tree-only mode")
-            print("  -c        Copy to clipboard")
-            print("  -tk       Show token count")
-            print("  -u        Unsafe mode (Read all text files)")
+            print("-" * 55)
+            print("Usage: ai-context [path] [options]")
+            print("\nCore Options:")
+            print("  -i [ext...]      Include extra extensions (e.g., -i log cfg)")
+            print("  -t [file...]     Target specific files only")
+            print("  -to              Tree-only mode (no content)")
+            print("  -c               Copy output to clipboard")
+            print("  -tk              Show estimated token count")
+            print("  -u               Unsafe mode (Read all text files)")
+            print("\nFiltering Options:")
+            print("  -xd [dir...]     Exclude specific directories")
+            print("  -xf [file...]    Exclude specific files")
+            print("  -xe [ext...]     Exclude specific extensions")
+            print("\nOther:")
+            print("  -h               Show this help menu")
+        print("-" * 55)
         return
 
     root = os.path.abspath(args.path)
@@ -182,7 +199,6 @@ def main():
     exclude_files = DEFAULT_IGNORE_FILES.union(set(args.exclude_file))
     exclude_exts = set(args.exclude_ext)
     
-    # Yeni eklenen uzantıları listeye dahil et
     extra_exts = {f".{e.strip('.')}" for e in args.include_ext}
     effective_allowed = ALLOWED_EXTS.union(extra_exts)
     
