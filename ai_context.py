@@ -108,8 +108,10 @@ def write_report(root_path, files, ignored_dirs, clipboard=False, show_tokens=Fa
                     content = f.read()
                 output.write(f"\n### 📄 `{rel_path}`\n```{ext}\n{content}\n```\n")
             except: continue
-
-    report_text = output.getvalue()
+    
+    if platform.system() == "Windows":
+        os.startfile(out_dir)
+        report_text = output.getvalue()
     
     desktop = os.path.join(os.path.expanduser("~"), "Desktop")
     out_dir = os.path.join(desktop, "ai-reports")
