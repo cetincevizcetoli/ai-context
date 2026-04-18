@@ -24,7 +24,7 @@
 ### 1. Diğer Kullanıcılar İçin (Normal Kurulum / Upgrade)
 GitHub üzerinden doğrudan en güncel sürümü yüklemek veya güncellemek için:
 ```bash
-pip install --upgrade git+[https://github.com/cetincevizcetoli/ai-context.git](https://github.com/cetincevizcetoli/ai-context.git)
+pip install --upgrade git+https://github.com/cetincevizcetoli/ai-context.git
 ```
 
 ### 2. Geliştirici Modunda Yükleme (Önerilen / Recommended)
