@@ -108,11 +108,10 @@ def write_report(root_path, files, ignored_dirs, clipboard=False, show_tokens=Fa
                     content = f.read()
                 output.write(f"\n### 📄 `{rel_path}`\n```{ext}\n{content}\n```\n")
             except: continue
+
+    report_text = output.getvalue()
     
-    if platform.system() == "Windows":
-        os.startfile(out_dir)
-        report_text = output.getvalue()
-    
+    # --- DÜZELTME BURADA BAŞLIYOR ---
     desktop = os.path.join(os.path.expanduser("~"), "Desktop")
     out_dir = os.path.join(desktop, "ai-reports")
     
@@ -122,10 +121,19 @@ def write_report(root_path, files, ignored_dirs, clipboard=False, show_tokens=Fa
         out_dir = os.path.join(os.path.expanduser("~"), "ai-context-reports")
         os.makedirs(out_dir, exist_ok=True)
 
+    # Dosya yolunu belirle
     filename = os.path.join(out_dir, f"{f_prefix}_{datetime.now().strftime('%H%M%S')}.md")
     
+    # Dosyayı yaz
     with open(filename, "w", encoding="utf-8-sig") as f:
         f.write(report_text)
+
+    # ŞİMDİ KLASÖRÜ AÇABİLİRİZ (Değişken artık tanımlı ve klasör oluşturuldu)
+    if platform.system() == "Windows":
+        try:
+            os.startfile(out_dir)
+        except: pass
+    # --- DÜZELTME BURADA BİTİYOR ---
 
     if show_tokens:
         print(f"📊 Tahmini Bağlam: ~{len(report_text)//4} Token")
