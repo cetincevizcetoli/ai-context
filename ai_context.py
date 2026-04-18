@@ -9,7 +9,7 @@ import locale
 from datetime import datetime
 
 # Versiyon Güncellendi
-VERSION = "1.2.0"
+VERSION = "1.2.1"
 
 # Windows terminalinde emojilerin düzgün görünmesi için UTF-8 zorlaması
 if platform.system() == "Windows":
