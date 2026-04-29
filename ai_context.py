@@ -10,7 +10,7 @@ import fnmatch
 from datetime import datetime
 
 # Versiyon Güncellendi
-VERSION = "1.3.1"
+VERSION = "1.3.2"
 
 # Windows terminalinde emojilerin düzgün görünmesi için UTF-8 zorlaması
 if platform.system() == "Windows":
@@ -79,8 +79,10 @@ def get_gitignore_rules(root_path):
             pass
     return rules
 
-def build_tree(root_path, files, all_dirs):
+def build_tree(files, skipped_dirs):
     tree = {}
+    
+    # İşlenecek dosyaları ağaca ekle
     for rel in files:
         parts = rel.split("/")
         cur = tree
@@ -89,9 +91,16 @@ def build_tree(root_path, files, all_dirs):
                 cur.setdefault("__files__", []).append(p)
             else:
                 cur = cur.setdefault(p, {})
-    for d in all_dirs:
-        if os.path.isdir(os.path.join(root_path, d)) and d not in tree:
-            tree[d] = {"__excluded__": True}
+                
+    # Atlanan klasörleri ağaca boş düğüm olarak ekle
+    for rel_dir in skipped_dirs:
+        if rel_dir == ".": continue
+        parts = rel_dir.split("/")
+        cur = tree
+        for p in parts:
+            cur = cur.setdefault(p, {})
+        cur["__excluded__"] = True
+        
     return tree
 
 def generate_tree_text(node, prefix=""):
@@ -100,20 +109,25 @@ def generate_tree_text(node, prefix=""):
     dirs = sorted(k for k in node.keys() if k not in ["__files__", "__excluded__"])
     
     for d in dirs:
-        lines.append(f"{prefix}├── 📁 {d}/")
-        lines.append(generate_tree_text(node[d], prefix + "│   "))
-    
-    if node.get("__excluded__"):
-        # Bu kısım basitlik için bırakıldı, daha karmaşık yapı gerekebilir
-        pass
+        child_node = node[d]
+        has_children = len([k for k in child_node.keys() if k not in ["__files__", "__excluded__"]]) > 0
+        has_files = len(child_node.get("__files__", [])) > 0
+        is_excluded = child_node.get("__excluded__", False)
+        
+        tag = " [ATLANDI]" if (is_excluded and not has_children and not has_files) else ""
+        
+        lines.append(f"{prefix}├── 📁 {d}/{tag}")
+        
+        if has_children or has_files:
+            lines.append(generate_tree_text(child_node, prefix + "│   "))
 
     for i, fn in enumerate(files):
-        char = "└──" if i == len(files) - 1 and not dirs else "├──"
+        char = "└──" if i == len(files) - 1 else "├──"
         lines.append(f"{prefix}{char} 📄 {fn}")
     
     return "\n".join(lines)
 
-def write_report(root_path, files, ignored_dirs, clipboard=False, show_tokens=False, tree_only=False):
+def write_report(root_path, files, skipped_dirs, clipboard=False, show_tokens=False, tree_only=False):
     report_parts = []
     ts = datetime.now().strftime("%Y-%m-%d %H:%M")
     f_prefix = "TREE_ONLY" if tree_only else "AI_CONTEXT"
@@ -122,7 +136,7 @@ def write_report(root_path, files, ignored_dirs, clipboard=False, show_tokens=Fa
     report_parts.append(f"**Dizin:** `{root_path}` | **Dosya Sayısı:** {len(files)}\n\n")
     report_parts.append("## 📂 YAPISAL ÖZET\n```text\n")
     
-    tree_dict = build_tree(root_path, files, ignored_dirs)
+    tree_dict = build_tree(files, skipped_dirs)
     report_parts.append(generate_tree_text(tree_dict))
     report_parts.append("\n```\n\n---\n")
 
@@ -141,7 +155,6 @@ def write_report(root_path, files, ignored_dirs, clipboard=False, show_tokens=Fa
     
     # Yerelleştirme ve Kayıt Dizini Ayarı
     home = os.path.expanduser("~")
-    # Masaüstü klasör adını dile göre bulmaya çalış
     possible_desktops = ["Desktop", "Masaüstü", "Schreibtisch", "Escritorio", "Bureau"]
     out_dir = None
     for d in possible_desktops:
@@ -209,54 +222,42 @@ def main():
     effective_allowed = ALLOWED_EXTS.union(extra_exts)
     
     found_files = []
+    skipped_dirs = set()
+
     for r, dirs, files in os.walk(root):
-        # Gizli dizinleri ve engellenenleri filtrele
-        dirs[:] = [d for d in dirs if not d.startswith(".") and d not in exclude_dirs]
+        rel_r = os.path.relpath(r, root).replace("\\", "/")
         
+        # 1. Klasör filtreleme ve atlananları kaydetme
+        for d in list(dirs):
+            full_dir = os.path.join(r, d)
+            rel_dir = os.path.relpath(full_dir, root).replace("\\", "/")
+
+            is_excluded = d.startswith(".") or d in exclude_dirs
+
+            if args.git_ignore and not is_excluded:
+                for pattern in git_rules:
+                    clean_pattern = pattern.rstrip('/')
+                    if fnmatch.fnmatch(rel_dir, pattern) or fnmatch.fnmatch(d, pattern):
+                        is_excluded = True; break
+                    if rel_dir.startswith(clean_pattern + '/'):
+                        is_excluded = True; break
+                    if '/' not in clean_pattern and f"/{clean_pattern}/" in f"/{rel_dir}":
+                        is_excluded = True; break
+
+            if is_excluded:
+                skipped_dirs.add(rel_dir)
+                dirs.remove(d) # İçine girmeyi engelle
+
+        # 2. Dosya filtreleme
+        dir_has_valid_files = False
         for f in files:
             full_path = os.path.join(r, f)
             rel_path = os.path.relpath(full_path, root).replace("\\", "/")
             ext = os.path.splitext(f)[1].lower()
 
-            # 1. Dosya Boyutu Kontrolü
             try:
                 if args.max_size and (os.path.getsize(full_path) / 1024) > args.max_size:
                     continue
             except OSError: continue
 
-          
-           # 2. Git ve Filtreleme Kuralları
             is_git_ignored = False
-            for pattern in git_rules:
-                clean_pattern = pattern.rstrip('/')
-                # A: Dosya adı veya wildcard (*.log) eşleşmesi
-                if fnmatch.fnmatch(rel_path, pattern) or fnmatch.fnmatch(f, pattern):
-                    is_git_ignored = True
-                    break
-                # B: Dizin yolu eşleşmesi (webnet/log/ altındaki her şey)
-                if rel_path.startswith(clean_pattern + '/'):
-                    is_git_ignored = True
-                    break
-                # C: Bağımsız klasör adı eşleşmesi (sadece log yazıldıysa)
-                if '/' not in clean_pattern and f"/{clean_pattern}/" in f"/{rel_path}":
-                    is_git_ignored = True
-                    break
-            
-            if args.git_ignore and is_git_ignored and rel_path not in force_include and f not in force_include:
-                continue
-
-            if args.target and f not in args.target: continue
-            if f in exclude_files or ext in exclude_exts: continue
-            if ext in KNOWN_BINARY_EXTENSIONS: continue
-            
-            # 3. Uzantı İzin Kontrolü
-            if not args.tree_only and not args.unsafe and ext not in effective_allowed:
-                if rel_path not in force_include:
-                    continue
-            
-            found_files.append(rel_path)
-
-    write_report(root, sorted(found_files), exclude_dirs, args.clipboard, args.tokens, args.tree_only)
-
-if __name__ == "__main__":
-    main()
