@@ -10,7 +10,7 @@ import fnmatch
 from datetime import datetime
 
 # Versiyon Güncellendi
-VERSION = "1.3.0"
+VERSION = "1.3.1"
 
 # Windows terminalinde emojilerin düzgün görünmesi için UTF-8 zorlaması
 if platform.system() == "Windows":
@@ -224,8 +224,23 @@ def main():
                     continue
             except OSError: continue
 
-            # 2. Git ve Filtreleme Kuralları
-            is_git_ignored = any(fnmatch.fnmatch(rel_path, pattern) or fnmatch.fnmatch(f, pattern) for pattern in git_rules)
+          
+           # 2. Git ve Filtreleme Kuralları
+            is_git_ignored = False
+            for pattern in git_rules:
+                clean_pattern = pattern.rstrip('/')
+                # A: Dosya adı veya wildcard (*.log) eşleşmesi
+                if fnmatch.fnmatch(rel_path, pattern) or fnmatch.fnmatch(f, pattern):
+                    is_git_ignored = True
+                    break
+                # B: Dizin yolu eşleşmesi (webnet/log/ altındaki her şey)
+                if rel_path.startswith(clean_pattern + '/'):
+                    is_git_ignored = True
+                    break
+                # C: Bağımsız klasör adı eşleşmesi (sadece log yazıldıysa)
+                if '/' not in clean_pattern and f"/{clean_pattern}/" in f"/{rel_path}":
+                    is_git_ignored = True
+                    break
             
             if args.git_ignore and is_git_ignored and rel_path not in force_include and f not in force_include:
                 continue
