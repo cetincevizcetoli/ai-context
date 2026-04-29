@@ -8,13 +8,25 @@ import io
 import fnmatch
 from datetime import datetime
 
-VERSION = "1.3.4"
+VERSION = "1.3.5"
 
 # --- YAPILANDIRMA ---
-# Log dizinleri senin önerin üzerine varsayılana eklendi
+# Sadece bu uzantıların İÇERİĞİ rapora yazılır.
+ALLOWED_EXTS = {
+    ".py", ".php", ".js", ".ts", ".html", ".sql", 
+    ".tsx", ".jsx", ".vue", ".sh", ".inc", ".module", ".twig"
+}
+
+# Bu klasörler ağaçta [ATLANDI] olarak işaretlenir ve içine girilmez.
 DEFAULT_IGNORE_DIRS = {
     ".git", "venv", ".venv", "node_modules", "__pycache__", "vendor", 
     "tmp", "dist", "build", ".idea", ".vscode", "reports", "log", "logs"
+}
+
+# Bu dosyalar ağaçta görünür ama içerikleri asla okunmaz (md, txt dahil).
+DEFAULT_IGNORE_FILES = {
+    ".DS_Store", "thumbs.db", "composer.lock", "package-lock.json", "yarn.lock",
+    ".md", ".txt", ".log", ".json", ".xml", ".css", ".htaccess", ".env"
 }
 
 KNOWN_BINARY_EXTENSIONS = {
@@ -22,16 +34,6 @@ KNOWN_BINARY_EXTENSIONS = {
     ".jpg", ".jpeg", ".png", ".gif", ".bmp", ".ico", ".svg", ".webp", ".tiff",
     ".mp3", ".mp4", ".avi", ".mkv", ".mov", ".pdf", ".exe", ".dll", ".so", 
     ".pyc", ".class", ".dat", ".db", ".sqlite", ".sqlite3"
-}
-
-DEFAULT_IGNORE_FILES = {
-    ".DS_Store", "thumbs.db", "composer.lock", "package-lock.json", "yarn.lock"
-}
-
-ALLOWED_EXTS = {
-    ".py", ".php", ".js", ".ts", ".html", ".css", ".sql", ".md", ".txt", 
-    ".json", ".yaml", ".yml", ".htaccess", ".env", ".tsx", ".jsx", ".vue", 
-    ".ini", ".conf", ".sh", ".log"
 }
 
 def copy_to_clipboard(text):
@@ -133,11 +135,11 @@ def write_report(root_path, files, skipped_dirs, args):
     if not args.tree_only:
         for rel_path in files:
             full_path = os.path.join(root_path, rel_path)
-            ext = os.path.splitext(rel_path)[1].lower().replace('.','') or "text"
+            ext_label = os.path.splitext(rel_path)[1].lower().replace('.','') or "text"
             try:
                 with open(full_path, "r", encoding="utf-8", errors="replace") as f:
                     content = f.read()
-                report.write(f"\n### 📄 `{rel_path}`\n```{ext}\n{content}\n```\n")
+                report.write(f"\n### 📄 `{rel_path}`\n```{ext_label}\n{content}\n```\n")
             except Exception: continue
 
     report_text = report.getvalue()
@@ -162,6 +164,7 @@ def main():
     parser.add_argument("-ms", "--max-size", type=int)
 
     args, unknown = parser.parse_known_args()
+    # DÜZELTİLEN SATIR: os.path.abspath kullanıldı
     root = os.path.abspath(args.path)
     git_rules = get_gitignore_rules(root) if args.git_ignore else []
     force_include = set(args.git_force)
@@ -171,23 +174,19 @@ def main():
 
     for r, dirs, files in os.walk(root):
         rel_r = os.path.relpath(r, root).replace("\\", "/")
-        # lstrip("./") kaldırıldı, root dizini eşleşmesi normalize edildi.
         if rel_r == ".": rel_r = "" 
 
-        # Üst dizin kontrolü: rstrip('/') ile tam yol güvenliği sağlandı.
         if any(rel_r == sd or rel_r.startswith(sd + "/") for sd in skipped_dirs):
             dirs[:] = []; continue
 
         for d in list(dirs):
             rel_dir = os.path.join(rel_r, d).replace("\\", "/").strip("/")
             is_ex = d in DEFAULT_IGNORE_DIRS or d.startswith(".")
-            
             if args.git_ignore and not is_ex:
                 for pattern in git_rules:
                     p = pattern.rstrip('/')
                     if fnmatch.fnmatch(rel_dir, p) or fnmatch.fnmatch(d, p) or rel_dir.startswith(p + '/'):
                         is_ex = True; break
-            
             if is_ex:
                 skipped_dirs.add(rel_dir); dirs.remove(d)
 
@@ -196,7 +195,6 @@ def main():
             rel_p = os.path.relpath(full_p, root).replace("\\", "/").lstrip("./")
             ext = os.path.splitext(f)[1].lower()
             
-            # Üst dizinlerden biri skipped_dirs içindeyse dosyayı kesinlikle atla.
             if any(rel_p.startswith(sd + "/") for sd in skipped_dirs): continue
 
             is_gi = False
@@ -207,8 +205,11 @@ def main():
                         is_gi = True; break
 
             if is_gi and rel_p not in force_include: continue
-            if ext in KNOWN_BINARY_EXTENSIONS or f in DEFAULT_IGNORE_FILES: continue
-            if not args.tree_only and ext not in ALLOWED_EXTS and rel_p not in force_include: continue
+            
+            if ext in KNOWN_BINARY_EXTENSIONS: continue
+            if ext not in ALLOWED_EXTS and rel_p not in force_include: continue
+            if f in DEFAULT_IGNORE_FILES and rel_p not in force_include: continue
+            
             found_files.append(rel_p)
 
     write_report(root, sorted(found_files), skipped_dirs, args)
