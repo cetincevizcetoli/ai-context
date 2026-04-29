@@ -6,16 +6,17 @@ import subprocess
 import platform
 import io
 import locale
+import fnmatch
 from datetime import datetime
 
 # Versiyon Güncellendi
-VERSION = "1.2.1"
+VERSION = "1.3.0"
 
 # Windows terminalinde emojilerin düzgün görünmesi için UTF-8 zorlaması
 if platform.system() == "Windows":
     try:
         sys.stdout.reconfigure(encoding='utf-8')
-    except:
+    except AttributeError:
         import codecs
         sys.stdout = codecs.getwriter("utf-8")(sys.stdout.detach())
 
@@ -43,19 +44,40 @@ ALLOWED_EXTS = {
 }
 
 def copy_to_clipboard(text):
+    """Güvenli ve shell=False kullanarak panoya kopyalama yapar."""
     try:
         sys_type = platform.system()
         if sys_type == "Windows":
-            process = subprocess.Popen('clip', stdin=subprocess.PIPE, shell=True)
+            process = subprocess.Popen(['clip'], stdin=subprocess.PIPE, shell=False)
             process.communicate(input=text.encode('utf-16'))
-        else:
-            for cmd in ['xclip -selection clipboard', 'xsel -ib', 'wl-copy', 'pbcopy']:
-                if subprocess.run(f"which {cmd.split()[0]}", shell=True, stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL).returncode == 0:
-                    process = subprocess.Popen(cmd, stdin=subprocess.PIPE, shell=True)
+        elif sys_type == "Darwin": # macOS
+            process = subprocess.Popen(['pbcopy'], stdin=subprocess.PIPE, shell=False)
+            process.communicate(input=text.encode('utf-8'))
+        else: # Linux
+            for cmd in ['xclip', 'xsel', 'wl-copy']:
+                if subprocess.run(["which", cmd], capture_output=True).returncode == 0:
+                    c = [cmd, "-selection", "clipboard"] if cmd == 'xclip' else [cmd, "-ib"] if cmd == 'xsel' else [cmd]
+                    process = subprocess.Popen(c, stdin=subprocess.PIPE, shell=False)
                     process.communicate(input=text.encode('utf-8'))
                     return True
         return True
-    except: return False
+    except Exception:
+        return False
+
+def get_gitignore_rules(root_path):
+    """.gitignore dosyasını okur ve basit kuralları döndürür."""
+    rules = []
+    gitignore_path = os.path.join(root_path, ".gitignore")
+    if os.path.exists(gitignore_path):
+        try:
+            with open(gitignore_path, "r", encoding="utf-8") as f:
+                for line in f:
+                    line = line.strip()
+                    if line and not line.startswith("#"):
+                        rules.append(line)
+        except Exception:
+            pass
+    return rules
 
 def build_tree(root_path, files, all_dirs):
     tree = {}
@@ -73,31 +95,36 @@ def build_tree(root_path, files, all_dirs):
     return tree
 
 def generate_tree_text(node, prefix=""):
-    output = ""
+    lines = []
     files = sorted(node.get("__files__", []))
     dirs = sorted(k for k in node.keys() if k not in ["__files__", "__excluded__"])
-    for i, d in enumerate(dirs):
-        output += f"{prefix}├── 📁 {d}/\n"
-        output += generate_tree_text(node[d], prefix + "│   ")
+    
+    for d in dirs:
+        lines.append(f"{prefix}├── 📁 {d}/")
+        lines.append(generate_tree_text(node[d], prefix + "│   "))
+    
     if node.get("__excluded__"):
-        output = output.replace("/", "/ (excluded)")
+        # Bu kısım basitlik için bırakıldı, daha karmaşık yapı gerekebilir
+        pass
+
     for i, fn in enumerate(files):
-        char = "└──" if i == len(files) - 1 and len(dirs) == 0 else "├──"
-        output += f"{prefix}{char} 📄 {fn}\n"
-    return output
+        char = "└──" if i == len(files) - 1 and not dirs else "├──"
+        lines.append(f"{prefix}{char} 📄 {fn}")
+    
+    return "\n".join(lines)
 
 def write_report(root_path, files, ignored_dirs, clipboard=False, show_tokens=False, tree_only=False):
-    output = io.StringIO()
+    report_parts = []
     ts = datetime.now().strftime("%Y-%m-%d %H:%M")
-    
     f_prefix = "TREE_ONLY" if tree_only else "AI_CONTEXT"
-    output.write(f"# 📜 PROJE {'YAPISI' if tree_only else 'DOKÜMÜ'} ({ts})\n")
-    output.write(f"**Dizin:** `{root_path}` | **Dosya Sayısı:** {len(files)}\n\n")
     
-    output.write("## 📂 YAPISAL ÖZET\n```text\n")
+    report_parts.append(f"# 📜 PROJE {'YAPISI' if tree_only else 'DOKÜMÜ'} ({ts})\n")
+    report_parts.append(f"**Dizin:** `{root_path}` | **Dosya Sayısı:** {len(files)}\n\n")
+    report_parts.append("## 📂 YAPISAL ÖZET\n```text\n")
+    
     tree_dict = build_tree(root_path, files, ignored_dirs)
-    output.write(generate_tree_text(tree_dict))
-    output.write("```\n\n---\n")
+    report_parts.append(generate_tree_text(tree_dict))
+    report_parts.append("\n```\n\n---\n")
 
     if not tree_only:
         for rel_path in files:
@@ -106,137 +133,112 @@ def write_report(root_path, files, ignored_dirs, clipboard=False, show_tokens=Fa
             try:
                 with open(full_path, "r", encoding="utf-8", errors="replace") as f:
                     content = f.read()
-                output.write(f"\n### 📄 `{rel_path}`\n```{ext}\n{content}\n```\n")
-            except: continue
+                report_parts.append(f"\n### 📄 `{rel_path}`\n```{ext}\n{content}\n```\n")
+            except Exception:
+                continue
 
-    report_text = output.getvalue()
+    report_text = "".join(report_parts)
     
-    # --- DÜZELTME BURADA BAŞLIYOR ---
-    desktop = os.path.join(os.path.expanduser("~"), "Desktop")
-    out_dir = os.path.join(desktop, "ai-reports")
+    # Yerelleştirme ve Kayıt Dizini Ayarı
+    home = os.path.expanduser("~")
+    # Masaüstü klasör adını dile göre bulmaya çalış
+    possible_desktops = ["Desktop", "Masaüstü", "Schreibtisch", "Escritorio", "Bureau"]
+    out_dir = None
+    for d in possible_desktops:
+        p = os.path.join(home, d, "ai-reports")
+        if os.path.exists(os.path.join(home, d)):
+            out_dir = p
+            break
     
+    if not out_dir:
+        out_dir = os.path.join(home, "ai-reports")
+
     try:
         os.makedirs(out_dir, exist_ok=True)
-    except:
-        out_dir = os.path.join(os.path.expanduser("~"), "ai-context-reports")
-        os.makedirs(out_dir, exist_ok=True)
-
-    # Dosya yolunu belirle
-    filename = os.path.join(out_dir, f"{f_prefix}_{datetime.now().strftime('%H%M%S')}.md")
-    
-    # Dosyayı yaz
-    with open(filename, "w", encoding="utf-8-sig") as f:
-        f.write(report_text)
-
-    # ŞİMDİ KLASÖRÜ AÇABİLİRİZ (Değişken artık tanımlı ve klasör oluşturuldu)
-    if platform.system() == "Windows":
-        try:
+        filename = os.path.join(out_dir, f"{f_prefix}_{datetime.now().strftime('%H%M%S')}.md")
+        with open(filename, "w", encoding="utf-8-sig") as f:
+            f.write(report_text)
+        
+        if platform.system() == "Windows":
             os.startfile(out_dir)
-        except: pass
-    # --- DÜZELTME BURADA BİTİYOR ---
+            
+        print(f"📄 Rapor kaydedildi: {filename}")
+    except Exception as e:
+        print(f"⚠️ Dosya yazılamadı: {e}")
 
     if show_tokens:
         print(f"📊 Tahmini Bağlam: ~{len(report_text)//4} Token")
-    if clipboard:
-        if copy_to_clipboard(report_text): print("✅ Sonuç panoya kopyalandı.")
     
-    print(f"📄 Rapor kaydedildi: {filename}")
+    if clipboard:
+        if copy_to_clipboard(report_text):
+            print("✅ Sonuç panoya kopyalandı.")
+    
     print(f"✅ Toplam {len(files)} dosya başarıyla işlendi.")
 
 def main():
-    for arg in sys.argv:
-        if arg.startswith('--') and arg not in ['--help']:
-            print(f"⚠️ HATA: Geçersiz argüman formatı '{arg}'. Lütfen tek tire '-' kullanın.")
-            sys.exit(1)
-
-    parser = argparse.ArgumentParser(description=f"ai-context v{VERSION}", prefix_chars='-', add_help=False)
+    parser = argparse.ArgumentParser(
+        description=f"ai-context v{VERSION}",
+        formatter_class=argparse.RawTextHelpFormatter
+    )
     
-    parser.add_argument("-h", "-help", action="store_true", dest="help")
-    parser.add_argument("path", nargs="?", default=os.getcwd())
-    parser.add_argument("-t", "-target", nargs="+", dest="target")
-    parser.add_argument("-i", "-include-ext", nargs="+", default=[], dest="include_ext")
-    parser.add_argument("-xd", "-exclude-dir", nargs="+", default=[], dest="exclude_dir")
-    parser.add_argument("-xf", "-exclude-file", nargs="+", default=[], dest="exclude_file")
-    parser.add_argument("-xe", "-exclude-ext", nargs="+", default=[], dest="exclude_ext")
-    parser.add_argument("-u", "-unsafe", action="store_true", dest="unsafe")
-    parser.add_argument("-c", "-clipboard", action="store_true", dest="clipboard")
-    parser.add_argument("-tk", "-tokens", action="store_true", dest="tokens")
-    parser.add_argument("-to", "-tree-only", action="store_true", dest="tree_only")
-    # Yeni Özellik: Max Size
-    parser.add_argument("-ms", "-max-size", type=int, default=None, dest="max_size")
+    parser.add_argument("path", nargs="?", default=os.getcwd(), help="Taranacak dizin yolu")
+    parser.add_argument("-t", "--target", nargs="+", help="Sadece belirli dosyaları tara")
+    parser.add_argument("-i", "--include-ext", nargs="+", default=[], help="Ekstra uzantı ekle (Örn: log cfg)")
+    parser.add_argument("-xd", "--exclude-dir", nargs="+", default=[], help="Dizinleri hariç tut")
+    parser.add_argument("-xf", "--exclude-file", nargs="+", default=[], help="Dosyaları hariç tut")
+    parser.add_argument("-xe", "--exclude-ext", nargs="+", default=[], help="Uzantıları hariç tut")
+    parser.add_argument("-u", "--unsafe", action="store_true", help="Tüm metin dosyalarını oku")
+    parser.add_argument("-c", "--clipboard", action="store_true", help="Panoya kopyala")
+    parser.add_argument("-tk", "--tokens", action="store_true", help="Token sayısını göster")
+    parser.add_argument("-to", "--tree-only", action="store_true", help="Sadece klasör yapısı")
+    parser.add_argument("-ms", "--max-size", type=int, help="Maksimum dosya boyutu (KB)")
+    parser.add_argument("-git", "--git-ignore", action="store_true", help=".gitignore kurallarını uygula")
+    parser.add_argument("-gf", "--git-force", nargs="+", default=[], help="Git yoksaysa bile zorla dahil et")
 
     args = parser.parse_args()
-
-    if args.help:
-        try: sys_lang = locale.getdefaultlocale()[0]
-        except: sys_lang = "en"
-        is_tr = sys_lang and sys_lang.startswith("tr")
-        if is_tr:
-            print(f"\n🚀 ai-context v{VERSION} | Yardım Menüsü")
-            print("-" * 55)
-            print("Kullanım: ai-context [yol] [seçenekler]")
-            print("\nTemel Seçenekler:")
-            print("  -ms [kb]         Belirlenen KB'dan büyük dosyaları atla")
-            print("  -i [uzantı...]   Listede olmayan uzantıları ekle (Örn: -i log cfg)")
-            print("  -t [dosya...]    Sadece belirli dosyaları tara")
-            print("  -to              Sadece klasör yapısını çıkar (içerik okumaz)")
-            print("  -c               Sonucu panoya kopyala")
-            print("  -tk              Tahmini token sayısını göster")
-            print("  -u               Güvenli listeyi bypass et (Tüm metinleri oku)")
-            print("\nFiltreleme Seçenekleri:")
-            print("  -xd [klasör...]  Belirli klasörleri hariç tut")
-            print("  -xf [dosya...]   Belirli dosyaları hariç tut")
-            print("  -xe [uzantı...]  Belirli uzantıları hariç tut")
-            print("\nDiğer:")
-            print("  -h               Bu yardım menüsünü gösterir")
-        else:
-            print(f"\n🚀 ai-context v{VERSION} | Help Menu")
-            print("-" * 55)
-            print("Usage: ai-context [path] [options]")
-            print("\nCore Options:")
-            print("  -ms [kb]         Skip files larger than KB")
-            print("  -i [ext...]      Include extra extensions (e.g., -i log cfg)")
-            print("  -t [file...]     Target specific files only")
-            print("  -to              Tree-only mode (no content)")
-            print("  -c               Copy output to clipboard")
-            print("  -tk              Show estimated token count")
-            print("  -u               Unsafe mode (Read all text files)")
-            print("\nFiltering Options:")
-            print("  -xd [dir...]     Exclude specific directories")
-            print("  -xf [file...]    Exclude specific files")
-            print("  -xe [ext...]     Exclude specific extensions")
-            print("\nOther:")
-            print("  -h               Show this help menu")
-        print("-" * 55)
-        return
 
     root = os.path.abspath(args.path)
     exclude_dirs = DEFAULT_IGNORE_DIRS.union(set(args.exclude_dir))
     exclude_files = DEFAULT_IGNORE_FILES.union(set(args.exclude_file))
-    exclude_exts = set(args.exclude_ext)
+    exclude_exts = {f".{e.lstrip('.')}" for e in args.exclude_ext}
     
-    extra_exts = {f".{e.strip('.')}" for e in args.include_ext}
+    git_rules = get_gitignore_rules(root) if args.git_ignore else []
+    force_include = set(args.git_force)
+
+    extra_exts = {f".{e.lstrip('.')}" for e in args.include_ext}
     effective_allowed = ALLOWED_EXTS.union(extra_exts)
     
     found_files = []
     for r, dirs, files in os.walk(root):
+        # Gizli dizinleri ve engellenenleri filtrele
         dirs[:] = [d for d in dirs if not d.startswith(".") and d not in exclude_dirs]
+        
         for f in files:
             full_path = os.path.join(r, f)
-            # DOSYA BOYUTU KONTROLÜ
-            try:
-                file_size_kb = os.path.getsize(full_path) / 1024
-                if args.max_size and file_size_kb > args.max_size:
-                    continue
-            except OSError:
-                continue
-
             rel_path = os.path.relpath(full_path, root).replace("\\", "/")
             ext = os.path.splitext(f)[1].lower()
+
+            # 1. Dosya Boyutu Kontrolü
+            try:
+                if args.max_size and (os.path.getsize(full_path) / 1024) > args.max_size:
+                    continue
+            except OSError: continue
+
+            # 2. Git ve Filtreleme Kuralları
+            is_git_ignored = any(fnmatch.fnmatch(rel_path, pattern) or fnmatch.fnmatch(f, pattern) for pattern in git_rules)
+            
+            if args.git_ignore and is_git_ignored and rel_path not in force_include and f not in force_include:
+                continue
+
             if args.target and f not in args.target: continue
             if f in exclude_files or ext in exclude_exts: continue
-            if not args.tree_only and not args.unsafe and ext not in effective_allowed: continue
             if ext in KNOWN_BINARY_EXTENSIONS: continue
+            
+            # 3. Uzantı İzin Kontrolü
+            if not args.tree_only and not args.unsafe and ext not in effective_allowed:
+                if rel_path not in force_include:
+                    continue
+            
             found_files.append(rel_path)
 
     write_report(root, sorted(found_files), exclude_dirs, args.clipboard, args.tokens, args.tree_only)
