@@ -8,25 +8,22 @@ import io
 import fnmatch
 from datetime import datetime
 
-VERSION = "1.3.5"
+VERSION = "1.3.17"
 
 # --- YAPILANDIRMA ---
-# Sadece bu uzantıların İÇERİĞİ rapora yazılır.
 ALLOWED_EXTS = {
     ".py", ".php", ".js", ".ts", ".html", ".sql", 
     ".tsx", ".jsx", ".vue", ".sh", ".inc", ".module", ".twig"
 }
 
-# Bu klasörler ağaçta [ATLANDI] olarak işaretlenir ve içine girilmez.
 DEFAULT_IGNORE_DIRS = {
     ".git", "venv", ".venv", "node_modules", "__pycache__", "vendor", 
     "tmp", "dist", "build", ".idea", ".vscode", "reports", "log", "logs"
 }
 
-# Bu dosyalar ağaçta görünür ama içerikleri asla okunmaz (md, txt dahil).
 DEFAULT_IGNORE_FILES = {
     ".DS_Store", "thumbs.db", "composer.lock", "package-lock.json", "yarn.lock",
-    ".md", ".txt", ".log", ".json", ".xml", ".css", ".htaccess", ".env"
+    ".md", ".txt", ".log", ".json", ".xml", ".css", ".htaccess", ".env", ".scss", ".less"
 }
 
 KNOWN_BINARY_EXTENSIONS = {
@@ -156,18 +153,38 @@ def write_report(root_path, files, skipped_dirs, args):
 def main():
     parser = argparse.ArgumentParser(description=f"ai-context v{VERSION}")
     parser.add_argument("path", nargs="?", default=os.getcwd())
-    parser.add_argument("-c", "--clipboard", action="store_true")
-    parser.add_argument("-tk", "--tokens", action="store_true")
-    parser.add_argument("-to", "--tree-only", action="store_true")
-    parser.add_argument("-git", "--git-ignore", action="store_true")
-    parser.add_argument("-gf", "--git-force", nargs="+", default=[])
-    parser.add_argument("-ms", "--max-size", type=int)
+    
+    # Temel Seçenekler
+    parser.add_argument("-c", "--clipboard", action="store_true", help="Sonucu panoya kopyala")
+    parser.add_argument("-tk", "--tokens", action="store_true", help="Tahmini token sayısını göster")
+    parser.add_argument("-to", "--tree-only", action="store_true", help="Sadece klasör yapısını çıkar")
+    parser.add_argument("-ms", "--max-size", type=int, help="Belirlenen KB'dan büyük dosyaları atla")
+    parser.add_argument("-i", "--include-ext", nargs="+", default=[], help="Listede olmayan uzantıları ekle")
+    parser.add_argument("-t", "--target", nargs="+", default=[], help="Sadece belirli dosyaları tara")
+    parser.add_argument("-u", "--unsafe", action="store_true", help="Güvenli listeyi bypass et (Tüm metinleri oku)")
+    
+    # Filtreleme Seçenekleri
+    parser.add_argument("-xd", "--exclude-dir", nargs="+", default=[], help="Belirli klasörleri hariç tut")
+    parser.add_argument("-xf", "--exclude-file", nargs="+", default=[], help="Belirli dosyaları hariç tut")
+    parser.add_argument("-xe", "--exclude-ext", nargs="+", default=[], help="Belirli uzantıları hariç tut")
+    
+    # Git Seçenekleri
+    parser.add_argument("-git", "--git-ignore", action="store_true", help=".gitignore kurallarını uygula")
+    parser.add_argument("-gf", "--git-force", nargs="+", default=[], help=".gitignore'u ezerek zorla dahil et")
 
     args, unknown = parser.parse_known_args()
-    # DÜZELTİLEN SATIR: os.path.abspath kullanıldı
     root = os.path.abspath(args.path)
     git_rules = get_gitignore_rules(root) if args.git_ignore else []
+    
+    # Parametre Kümeleri (Hızlı arama için)
     force_include = set(args.git_force)
+    user_excluded_dirs = set(args.exclude_dir)
+    user_excluded_files = set(args.exclude_file)
+    user_targets = set(args.target)
+    
+    # Uzantıları '.' ile başlayacak şekilde standartlaştır
+    user_included_exts = set(e if e.startswith('.') else f".{e}" for e in args.include_ext)
+    user_excluded_exts = set(e if e.startswith('.') else f".{e}" for e in args.exclude_ext)
     
     found_files = []
     skipped_dirs = set()
@@ -181,6 +198,12 @@ def main():
 
         for d in list(dirs):
             rel_dir = os.path.join(rel_r, d).replace("\\", "/").strip("/")
+            
+            if d in user_excluded_dirs or rel_dir in user_excluded_dirs:
+                skipped_dirs.add(rel_dir)
+                dirs.remove(d)
+                continue
+                
             is_ex = d in DEFAULT_IGNORE_DIRS or d.startswith(".")
             if args.git_ignore and not is_ex:
                 for pattern in git_rules:
@@ -197,6 +220,19 @@ def main():
             
             if any(rel_p.startswith(sd + "/") for sd in skipped_dirs): continue
 
+            # Hedef dosya kontrolü (-t)
+            if user_targets and f not in user_targets and rel_p not in user_targets:
+                continue
+
+            # Hariç tutulan dosya kontrolü (-xf)
+            if f in user_excluded_files or rel_p in user_excluded_files:
+                continue
+
+            # Hariç tutulan uzantı kontrolü (-xe)
+            if ext in user_excluded_exts:
+                continue
+
+            # Git ignore kontrolü
             is_gi = False
             if args.git_ignore:
                 for pattern in git_rules:
@@ -206,10 +242,28 @@ def main():
 
             if is_gi and rel_p not in force_include: continue
             
+            # Binary dosya kontrolü (Unsafe mod olsa bile binary okunmaz)
             if ext in KNOWN_BINARY_EXTENSIONS: continue
-            if ext not in ALLOWED_EXTS and rel_p not in force_include: continue
-            if f in DEFAULT_IGNORE_FILES and rel_p not in force_include: continue
+
+            # Unsafe mod (-u) kapalıysa standart güvenlik kurallarını uygula
+            if not args.unsafe:
+                is_content_ignored = f in DEFAULT_IGNORE_FILES or ext in DEFAULT_IGNORE_FILES
+                is_allowed = ext in ALLOWED_EXTS or ext in user_included_exts
+
+                if is_content_ignored and rel_p not in force_include:
+                    continue
+                    
+                if not is_allowed and rel_p not in force_include:
+                    continue
             
+            # Max Size kontrolü (-ms KB cinsinden)
+            if args.max_size:
+                try:
+                    if os.path.getsize(full_p) > (args.max_size * 1024):
+                        continue
+                except OSError:
+                    continue
+
             found_files.append(rel_p)
 
     write_report(root, sorted(found_files), skipped_dirs, args)
