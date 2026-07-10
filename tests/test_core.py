@@ -293,6 +293,61 @@ class AiContextTests(unittest.TestCase):
         self.assertNotIn("NOISE_CONTENT", text)
         self.assertEqual(content_count, 1)
 
+
+    def test_interactive_excluded_extension_stays_in_map_but_not_content(self):
+        self.write("app/main.php", b"<?php echo 'APP';\n")
+        self.write("app/schema.sql", b"CREATE TABLE secret_table;\n")
+        scan = self.scan(smart_map=True)
+        with patch("sys.stdin.isatty", return_value=True), patch("builtins.input", return_value=""):
+            selection = interactive_select(
+                scan,
+                budget=0,
+                allow_sensitive=False,
+                force_include=set(),
+                map_limit=120,
+                excluded_exts={".sql"},
+            )
+        self.assertIn("app/main.php", selection.selected_paths)
+        self.assertIn("app/schema.sql", selection.map_file_paths)
+        self.assertNotIn("app/schema.sql", selection.selected_paths)
+        self.assertIn("HARİÇ UZANTI", selection.path_notes["app/schema.sql"])
+        text, _, _, _ = build_report_text(scan, selection, tree_only=False)
+        self.assertIn("schema.sql [HARİÇ UZANTI", text)
+        self.assertNotIn("CREATE TABLE secret_table", text)
+
+    def test_interactive_excluded_file_stays_in_map_but_not_content(self):
+        self.write("app/main.php", b"<?php echo 'APP';\n")
+        self.write("app/debug.php", b"<?php echo 'DEBUG';\n")
+        scan = self.scan(smart_map=True)
+        with patch("sys.stdin.isatty", return_value=True), patch("builtins.input", return_value=""):
+            selection = interactive_select(
+                scan,
+                budget=0,
+                allow_sensitive=False,
+                force_include=set(),
+                map_limit=120,
+                excluded_files={"debug.php"},
+            )
+        self.assertIn("app/debug.php", selection.map_file_paths)
+        self.assertNotIn("app/debug.php", selection.selected_paths)
+        self.assertIn("HARİÇ DOSYA", selection.path_notes["app/debug.php"])
+
+    def test_force_include_overrides_interactive_excluded_extension(self):
+        self.write("app/main.php", b"<?php echo 'APP';\n")
+        self.write("app/schema.sql", b"CREATE TABLE required_table;\n")
+        scan = self.scan(smart_map=True, force_include={"app/schema.sql"})
+        with patch("sys.stdin.isatty", return_value=True), patch("builtins.input", return_value=""):
+            selection = interactive_select(
+                scan,
+                budget=0,
+                allow_sensitive=False,
+                force_include={"app/schema.sql"},
+                map_limit=120,
+                excluded_exts={".sql"},
+            )
+        self.assertIn("app/schema.sql", selection.selected_paths)
+        self.assertEqual(selection.path_notes["app/schema.sql"], "İÇERİK")
+
     def test_markerless_php_project_is_detected(self):
         self.write("index.php", b"<?php\n")
         self.write("app/page.php", b"<?php\n")

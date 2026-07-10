@@ -28,8 +28,14 @@ def build_parser() -> argparse.ArgumentParser:
     legacy.add_argument("-t", "--target", nargs="+", default=[], help="Yalnızca belirli dosya/yolları tara")
     legacy.add_argument("-u", "--unsafe", action="store_true", help="Bilinmeyen metin uzantılarını da içerik olarak al")
     legacy.add_argument("-xd", "--exclude-dir", nargs="+", default=[], help="Klasörleri hariç tut")
-    legacy.add_argument("-xf", "--exclude-file", nargs="+", default=[], help="Dosyaları hariç tut")
-    legacy.add_argument("-xe", "--exclude-ext", nargs="+", default=[], help="Uzantıları hariç tut")
+    legacy.add_argument(
+        "-xf", "--exclude-file", nargs="+", default=[],
+        help="Dosyaları hariç tut; -it modunda adı haritada kalır, içeriği alınmaz",
+    )
+    legacy.add_argument(
+        "-xe", "--exclude-ext", nargs="+", default=[],
+        help="Uzantıları hariç tut; -it modunda dosya adı haritada kalır, içeriği alınmaz",
+    )
     legacy.add_argument("-git", "--git-ignore", action="store_true", help="Git görünür dosya listesini ve ignore kurallarını kullan")
     legacy.add_argument("-gf", "--git-force", nargs="+", default=[], help="Belirtilen yolu ignore/güvenlik filtresine rağmen zorla dahil et")
 
@@ -69,7 +75,12 @@ def main(argv: Optional[Sequence[str]] = None) -> int:
                 excluded_dirs.add(normalize_rel_path(os.path.relpath(output_abs, root)))
         except ValueError:
             pass
-    excluded_files = set(args.exclude_file) | set(DEFAULT_IGNORE_FILE_NAMES)
+    user_excluded_files = _normalized_paths(args.exclude_file)
+    # Etkileşimli modda kullanıcı filtreleri dosyayı haritadan silmez; yalnızca
+    # içeriğinin okunmasını engeller. Varsayılan çöp dosyaları ise taramaya alınmaz.
+    excluded_files = set(DEFAULT_IGNORE_FILE_NAMES)
+    if not args.interactive:
+        excluded_files.update(user_excluded_files)
     targets = _normalized_paths(args.target)
     force_include = _normalized_paths(args.git_force)
 
@@ -81,7 +92,9 @@ def main(argv: Optional[Sequence[str]] = None) -> int:
             changed_only=args.changed_only,
             excluded_dirs=excluded_dirs,
             excluded_files=excluded_files,
-            excluded_exts=exclude_exts,
+            # -it modunda -xe bir "içerik filtresi"dir. Dosya proje
+            # haritasında görünmeye devam ettiği için tarama aşamasında silinmez.
+            excluded_exts=set() if args.interactive else exclude_exts,
             targets=targets,
             max_size_kb=max(0, args.max_size),
             force_include=force_include,
@@ -95,6 +108,8 @@ def main(argv: Optional[Sequence[str]] = None) -> int:
                 allow_sensitive=args.allow_sensitive,
                 force_include=force_include,
                 map_limit=max(0, args.map_limit),
+                excluded_exts=exclude_exts,
+                excluded_files=user_excluded_files,
             )
         else:
             # Geriye uyum: bütçe yalnızca kullanıcı açıkça --budget yazdıysa uygulanır.

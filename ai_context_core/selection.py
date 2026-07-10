@@ -1,7 +1,7 @@
 import os
 import sys
 from dataclasses import dataclass, field
-from typing import Dict, Iterable, List, Sequence, Set, Tuple
+from typing import Dict, Iterable, List, Optional, Sequence, Set, Tuple
 
 from .config import (
     CONTENT_FOLDER_NAMES,
@@ -117,6 +117,36 @@ def _safe_text_files(files: Iterable[FileRecord]) -> List[FileRecord]:
     return [item for item in files if not item.is_binary and not item.is_sensitive]
 
 
+def _is_forced(item: FileRecord, force_include: Set[str]) -> bool:
+    return item.rel_path in force_include or item.name in force_include
+
+
+def _matches_excluded_file(item: FileRecord, excluded_files: Set[str]) -> bool:
+    return item.rel_path in excluded_files or item.name in excluded_files
+
+
+def _content_exclusion_reason(
+    item: FileRecord,
+    *,
+    excluded_exts: Set[str],
+    excluded_files: Set[str],
+    force_include: Set[str],
+) -> str:
+    """Return why a mapped file must not be read in interactive mode.
+
+    Folder modes choose *where* content is wanted. CLI filters remain the
+    stronger final gate. ``-gf`` is the explicit exception mechanism.
+    """
+    if _is_forced(item, force_include):
+        return ""
+    if _matches_excluded_file(item, excluded_files):
+        return "HARİÇ DOSYA - varlığı gösterildi, içerik eklenmedi"
+    if item.extension in excluded_exts:
+        label = item.extension or "uzantısız"
+        return f"HARİÇ UZANTI ({label}) - varlığı gösterildi, içerik eklenmedi"
+    return ""
+
+
 def _default_mode_and_role(key: str, files: Sequence[FileRecord], is_pruned: bool) -> Tuple[str, str]:
     if key == _ROOT_KEY:
         return "mixed", "Proje giriş ve yapılandırma dosyaları"
@@ -194,28 +224,83 @@ def build_folder_groups(scan: ScanResult) -> List[FolderGroup]:
     return sorted(groups, key=lambda group: (group.key != _ROOT_KEY, group.label.lower()))
 
 
-def _selected_for_group(group: FolderGroup) -> Set[str]:
+def _selected_for_group(
+    group: FolderGroup,
+    *,
+    excluded_exts: Optional[Set[str]] = None,
+    excluded_files: Optional[Set[str]] = None,
+    force_include: Optional[Set[str]] = None,
+) -> Set[str]:
+    excluded_exts = excluded_exts or set()
+    excluded_files = excluded_files or set()
+    force_include = force_include or set()
+
     if group.mode == "content":
-        return {item.rel_path for item in group.files if not item.is_binary and not item.is_sensitive}
-    if group.mode == "mixed":
-        return {
+        candidates = {
+            item.rel_path
+            for item in group.files
+            if not item.is_binary and not item.is_sensitive
+        }
+    elif group.mode == "mixed":
+        candidates = {
             item.rel_path
             for item in group.files
             if item.default_selected and not item.is_binary and not item.is_sensitive
         }
-    if group.mode == "pick":
-        return set(group.explicit_paths)
-    return set()
+    elif group.mode == "pick":
+        candidates = set(group.explicit_paths)
+    else:
+        candidates = set()
+
+    by_path = {item.rel_path: item for item in group.files}
+    return {
+        path
+        for path in candidates
+        if path in by_path
+        and not _content_exclusion_reason(
+            by_path[path],
+            excluded_exts=excluded_exts,
+            excluded_files=excluded_files,
+            force_include=force_include,
+        )
+    }
 
 
-def _tokens_for_group(group: FolderGroup) -> int:
-    selected = _selected_for_group(group)
+def _tokens_for_group(
+    group: FolderGroup,
+    *,
+    excluded_exts: Optional[Set[str]] = None,
+    excluded_files: Optional[Set[str]] = None,
+    force_include: Optional[Set[str]] = None,
+) -> int:
+    selected = _selected_for_group(
+        group,
+        excluded_exts=excluded_exts,
+        excluded_files=excluded_files,
+        force_include=force_include,
+    )
     return sum(item.estimated_tokens for item in group.files if item.rel_path in selected)
 
 
-def _print_folder_summary(scan: ScanResult, groups: Sequence[FolderGroup], budget: int) -> None:
+def _print_folder_summary(
+    scan: ScanResult,
+    groups: Sequence[FolderGroup],
+    budget: int,
+    *,
+    excluded_exts: Set[str],
+    excluded_files: Set[str],
+    force_include: Set[str],
+) -> None:
     total_size = sum(item.size_bytes for item in scan.files)
-    proposed_tokens = sum(_tokens_for_group(group) for group in groups)
+    proposed_tokens = sum(
+        _tokens_for_group(
+            group,
+            excluded_exts=excluded_exts,
+            excluded_files=excluded_files,
+            force_include=force_include,
+        )
+        for group in groups
+    )
     print("\nAI-CONTEXT PROJE HARİTASI")
     print(f"Proje       : {', '.join(scan.project_types)}")
     print(f"Tarayıcı    : {scan.scanner_name} + yapı haritası")
@@ -224,6 +309,10 @@ def _print_folder_summary(scan: ScanResult, groups: Sequence[FolderGroup], budge
     print(f"Öneri       : ~{human_int(proposed_tokens)} token")
     if budget > 0:
         print(f"Bütçe       : ~{human_int(budget)} token")
+    if excluded_exts:
+        print(f"Hariç uzantı: {', '.join(sorted(excluded_exts))} (haritada görünür, içerik okunmaz)")
+    if excluded_files:
+        print(f"Hariç dosya : {', '.join(sorted(excluded_files))} (haritada görünür, içerik okunmaz)")
     print()
     print(" No  Mod      Klasör / bölüm         Dosya      Boyut      İçerik       Rol")
     print("---  -------  --------------------  -------  ---------  ----------  -----------------------------")
@@ -231,7 +320,7 @@ def _print_folder_summary(scan: ScanResult, groups: Sequence[FolderGroup], budge
         mode = MODE_LABELS[group.mode]
         print(
             f"{index:>3}  {mode:<7}  {group.label[:20]:<20}  {group.file_count:>7}  "
-            f"{human_size(group.total_size):>9}  {human_int(_tokens_for_group(group)):>10}  {group.role[:29]}"
+            f"{human_size(group.total_size):>9}  {human_int(_tokens_for_group(group, excluded_exts=excluded_exts, excluded_files=excluded_files, force_include=force_include)):>10}  {group.role[:29]}"
         )
 
 
@@ -269,6 +358,8 @@ def _pick_files(
     *,
     allow_sensitive: bool,
     force_include: Set[str],
+    excluded_exts: Set[str],
+    excluded_files: Set[str],
 ) -> None:
     candidates = [
         item
@@ -280,10 +371,18 @@ def _pick_files(
             or item.rel_path in force_include
             or item.name in force_include
         )
+        and not _content_exclusion_reason(
+            item,
+            excluded_exts=excluded_exts,
+            excluded_files=excluded_files,
+            force_include=force_include,
+        )
     ]
     candidates.sort(key=lambda item: item.rel_path.lower())
     if not candidates:
-        print("Bu klasör taranmadı veya seçilebilir metin dosyası yok.")
+        print("Bu klasörde filtrelerden sonra içerik olarak seçilebilecek metin dosyası yok.")
+        if excluded_exts or excluded_files:
+            print("-xe/-xf ile hariç tutulan dosyalar haritada kalır; içerik listesine girmez.")
         return
 
     shown = candidates
@@ -330,6 +429,8 @@ def _edit_group(
     *,
     allow_sensitive: bool,
     force_include: Set[str],
+    excluded_exts: Set[str],
+    excluded_files: Set[str],
 ) -> None:
     print(f"\n{group.label} | mevcut mod: {MODE_LABELS[group.mode]}")
     if group.is_pruned:
@@ -373,7 +474,13 @@ def _edit_group(
             group.mode = "summary"
             return
         if choice == "5":
-            _pick_files(group, allow_sensitive=allow_sensitive, force_include=force_include)
+            _pick_files(
+                group,
+                allow_sensitive=allow_sensitive,
+                force_include=force_include,
+                excluded_exts=excluded_exts,
+                excluded_files=excluded_files,
+            )
             return
         if choice == "6":
             group.mode = "hide"
@@ -439,6 +546,8 @@ def _build_selection_from_groups(
     force_include: Set[str],
     budget: int,
     map_limit: int,
+    excluded_exts: Set[str],
+    excluded_files: Set[str],
 ) -> SelectionResult:
     files_by_path = {item.rel_path: item for item in scan.files}
     structure_files = {item.rel_path: item for item in scan.structure_entries if item.kind == "file"}
@@ -454,7 +563,12 @@ def _build_selection_from_groups(
 
     for group in groups:
         folder_modes[group.key] = group.mode
-        content_paths = _selected_for_group(group)
+        content_paths = _selected_for_group(
+            group,
+            excluded_exts=excluded_exts,
+            excluded_files=excluded_files,
+            force_include=force_include,
+        )
         selected.update(content_paths)
 
         if group.mode == "hide":
@@ -509,6 +623,22 @@ def _build_selection_from_groups(
     )
     blocked.update(newly_blocked)
 
+    # In interactive mode CLI filters are content filters, not map filters.
+    # Their paths remain visible even when a folder is switched to İÇERİK.
+    for path in map_files:
+        record = files_by_path.get(path)
+        if not record:
+            continue
+        reason = _content_exclusion_reason(
+            record,
+            excluded_exts=excluded_exts,
+            excluded_files=excluded_files,
+            force_include=force_include,
+        )
+        if reason:
+            selected.discard(path)
+            notes[path] = reason
+
     # Sensitive paths remain useful structural facts, but never leak content by
     # default. This includes ignored root .env files found by the map scan.
     for path in list(map_files):
@@ -554,16 +684,28 @@ def interactive_select(
     allow_sensitive: bool,
     force_include: Set[str],
     map_limit: int = 120,
+    excluded_exts: Optional[Set[str]] = None,
+    excluded_files: Optional[Set[str]] = None,
 ) -> SelectionResult:
     if not sys.stdin.isatty():
         raise RuntimeError("Etkileşimli mod için terminal girdisi gerekiyor.")
+
+    excluded_exts = excluded_exts or set()
+    excluded_files = excluded_files or set()
 
     groups = build_folder_groups(scan)
     if not groups:
         return SelectionResult()
 
     while True:
-        _print_folder_summary(scan, groups, budget)
+        _print_folder_summary(
+            scan,
+            groups,
+            budget,
+            excluded_exts=excluded_exts,
+            excluded_files=excluded_files,
+            force_include=force_include,
+        )
         print("\nEnter = bu planla rapor oluştur | N = klasör/bölüm ayarını değiştir")
         print("all = taranan bütün klasörleri İÇERİK yap | q = çık")
         raw = input("\nSeçiminiz: ").strip().lower()
@@ -587,6 +729,8 @@ def interactive_select(
             groups[index - 1],
             allow_sensitive=allow_sensitive,
             force_include=force_include,
+            excluded_exts=excluded_exts,
+            excluded_files=excluded_files,
         )
 
     selection = _build_selection_from_groups(
@@ -596,6 +740,8 @@ def interactive_select(
         force_include=force_include,
         budget=0,
         map_limit=max(0, map_limit),
+        excluded_exts=excluded_exts,
+        excluded_files=excluded_files,
     )
 
     current_tokens = sum(
