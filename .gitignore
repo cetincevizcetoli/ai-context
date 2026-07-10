@@ -1,6 +1,11 @@
 .venv/
+venv/
 __pycache__/
-*.pyc
+*.py[cod]
+*.egg-info/
+build/
+dist/
+.pytest_cache/
 .idea/
 .vscode/
 ai-reports/

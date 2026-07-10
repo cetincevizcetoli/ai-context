@@ -1,90 +1,171 @@
-# 🤖 AI-Context (v1.3.0)
+# AI-Context v1.4.0
 
-**TR:** `ai-context`, yerel kaynak kodlarınızı Yapay Zeka (LLM) modellerine (Claude, ChatGPT, Gemini vb.) aktarmak için optimize edilmiş profesyonel bir "bağlam döküm" (context dumper) aracıdır. Tüm projenizi veya seçtiğiniz dosyaları tek bir Markdown dosyasına dönüştürür, panoya kopyalar ve token sayısını hesaplar. Raporlar, yetki hatalarını önlemek için otomatik olarak Masaüstü'ndeki `ai-reports` klasörüne kaydedilir.
+`ai-context`, bir proje klasörünü yapay zekâ modellerine verilebilecek tek bir Markdown bağlamına dönüştürür. v1.4.0 mevcut komutları korur ve üzerine hızlı Git taraması, proje türü tanıma, etkileşimli uzantı seçimi, hassas dosya koruması ve token bütçesi ekler.
 
-**EN:** `ai-context` is a professional context dumping tool optimized for providing your codebase to LLMs (Claude, ChatGPT, Gemini, etc.). It converts your entire project or specific files into a single, clean Markdown file, copies it to the clipboard, and estimates token counts. Reports are automatically saved to the `ai-reports` folder on your Desktop to avoid permission issues.
+## Neler yeni?
 
----
+- **Tek keşif taraması:** İlk aşamada dosya içerikleri okunmaz. Yalnızca yol, uzantı, boyut ve sınıf bilgisi toplanır.
+- **Git hızlandırması:** Interaktif mod bir Git deposunda `git ls-files -co --exclude-standard` kullanır.
+- **Akıllı proje tanıma:** Python, Node.js, PHP/Composer, Rust, Go, Java, Docker ve başka proje işaretlerini tanır.
+- **Etkileşimli seçim:** Bulunan uzantıları dosya sayısı, toplam boyut ve yaklaşık token ile gösterir.
+- **Token bütçesi:** Bütçe aşılırsa en büyük dosyaları yalnızca isim olarak rapora koyabilir.
+- **Hassas dosya kalkanı:** `.env`, özel anahtarlar ve kimlik dosyaları varsayılan olarak engellenir.
+- **Geriye uyumluluk:** v1.3.18 seçenekleri korunur.
 
-## 🚀 Özellikler / Features
+## Kurulum
 
-- **📏 Dinamik Boyut Filtresi / Dynamic Size Filter:** `-ms` parametresi ile belirlediğiniz KB'dan büyük dosyaları otomatik olarak atlayabilirsiniz. / Skip files larger than specified KB using `-ms`.
-- **📂 Masaüstü Çıktısı / Desktop Output:** Raporlar artık her zaman Masaüstü'ne kaydedilir, böylece Program Files gibi klasörlerde yetki hatası almazsınız.
-- **➕ Dinamik Dahil Etme / Dynamic Include:** `-i` parametresi ile listede olmayan özel uzantıları (.log, .cfg vb.) anlık olarak sürece dahil edebilirsiniz.
-- **📂 Tree-Only Modu:** Projenin sadece klasör ağacını döküm alır (İçerik okumaz). / Dumps only folder structure (No content).
-- **🧠 Gitignore Entegrasyonu / Gitignore Support:** `-git` parametresi ile `.gitignore` kurallarını otomatik tanır ve uygular. Engellenmiş dosyaları `-gf` ile zorla dahil edebilirsiniz.
-- **🛡️ Binary Shield:** Resim, video, PDF ve derlenmiş dosyaları otomatik ayıklar.
-- **📋 Instant Copy:** Tek tıkla tüm dökümü panoya (clipboard) kopyalar.
-- **📊 Token Counter:** Çıktının tahmini Token maliyetini anlık hesaplar.
-
----
-
-## 🛠 Kurulum / Installation
-
-### 1. Diğer Kullanıcılar İçin (Normal Kurulum / Upgrade)
-GitHub üzerinden doğrudan en güncel sürümü yüklemek veya güncellemek için:
-```bash
-pip install --upgrade git+[https://github.com/cetincevizcetoli/ai-context.git](https://github.com/cetincevizcetoli/ai-context.git)
-```
-
-### 2. Geliştirici Modunda Yükleme (Önerilen / Recommended)
-Klasörün içine girin ve terminalde şu komutu çalıştırın. Bu sayede kodda yaptığınız değişiklikler anında komut satırına yansır:
 ```bash
 pip install -e .
 ```
 
----
+GitHub üzerinden güncelleme:
 
-## 📖 Kullanım Örnekleri / Usage Examples
+```bash
+pip install --upgrade git+https://github.com/cetincevizcetoli/ai-context.git
+```
 
-> **Önemli / Important:** Kısa parametreler tek tire (-), uzun parametreler çift tire (--) ile kullanılmaktadır.
-> Short arguments use a single dash (-), long arguments use a double dash (--).
+## Hızlı kullanım
 
-**TR: .gitignore kurallarını uygula ve panoya kopyala:**
-**EN: Apply .gitignore rules and copy:**
-`ai-context -git -c`
+Eski kullanım aynen devam eder:
 
-**TR: Gitignore açıkken .env dosyasını zorla dahil et:**
-**EN: Force include .env file while using gitignore:**
-`ai-context -git -gf .env -c`
+```bash
+ai-context -c -tk
+ai-context -git -c
+ai-context -ms 500 -i cfg log
+ai-context -t app.py templates/index.html
+```
 
-**TR: 500 KB'dan büyük dosyaları atla ve kopyala:**
-**EN: Skip files larger than 500 KB and copy:**
-`ai-context -ms 500 -c`
+Yeni akıllı mod:
 
-**TR: Özel uzantıları (log, cfg) sürece dahil et:**
-**EN: Include extra extensions (log, cfg):**
-`ai-context -i log cfg -c`
+```bash
+ai-context -it
+```
 
-**TR: Belirli bir dosyayı hedefle ve kopyala:**
-**EN: Target a specific file and copy:**
-`ai-context -t main.py -c`
+50.000 token bütçesiyle:
 
-**TR: Sadece klasör yapısını al ve panoya kopyala:**
-**EN: Get folder structure only and copy to clipboard:**
-`ai-context -to -c`
+```bash
+ai-context -it --budget 50000 -c
+```
 
----
+Yalnızca Git'te değişen veya yeni dosyalar:
 
-## ⚙️ Parametreler / Arguments
+```bash
+ai-context -it --changed-only
+```
 
-| Komut / Cmd | Açıklama (TR) | Description (EN) |
-| :--- | :--- | :--- |
-| -ms / --max-size | Maksimum dosya boyutu (KB) | Max file size filter (KB) |
-| -i / --include-ext | Özel uzantı ekle | Include extra extensions |
-| -to / --tree-only | Sadece klasör yapısını dök | Tree-only mode (structure only) |
-| -git / --git-ignore | .gitignore kurallarını uygula | Apply .gitignore rules |
-| -gf / --git-force | Git yoksaysa bile zorla ekle | Force include if git ignored |
-| -c / --clipboard | Panoya kopyala | Copy to clipboard |
-| -tk / --tokens | Token sayısını göster | Show estimated token count |
-| -t / --target | Sadece belirli dosyaları tara | Target specific files only |
-| -xd / --exclude-dir| Klasörleri hariç tut | Exclude directories |
-| -xf / --exclude-file| Dosyaları hariç tut | Exclude files |
-| -xe / --exclude-ext| Uzantıları hariç tut | Exclude extensions |
-| -u / --unsafe | Tüm dosya tiplerini oku | Unsafe mode (Read all extensions) |
-| -h / --help | Yardım menüsünü göster | Show help menu |
+Belirli çıktı klasörü:
 
----
+```bash
+ai-context -it --output ./reports --no-open
+```
 
-## ⚖️ Lisans / License
+## Interaktif ekran
+
+Program uzantıları buna benzer gösterir:
+
+```text
+ No  Seç  Tür / uzantı             Dosya       Boyut       Token
+---  ---  ----------------------  -------  ----------  ----------
+  1  [x]  .py                          24    142.0 KB      36.352
+  2  [x]  .html                         8     34.0 KB       8.704
+  3  [~]  .json                        12      1.2 MB     314.000
+  4  [ ]  .png (binary)                20      8.4 MB           0
+  5  [!]  Hassas dosyalar               2      2.1 KB         530
+```
+
+Komutlar:
+
+- `Enter`: önerilen dosyaları kullanır. `[~]` işaretli gruplarda yalnızca gerçekten önerilen dosyalar alınır.
+- `all`: bütün güvenli grupları seçer.
+- `1,3,5-7`: verilen grup numaralarını seçer.
+- `list 3`: grubun dosyalarını gösterir.
+- `q`: işlemi iptal eder.
+
+## Güvenlik
+
+Aşağıdaki türler varsayılan olarak içerikten çıkarılır:
+
+```text
+.env
+.env.production
+*.pem
+*.key
+*.p12
+id_rsa
+credentials.json
+secrets.json
+service-account.json
+```
+
+Tek bir hassas dosyayı bilinçli olarak eklemek için tam yolu zorlayabilirsiniz:
+
+```bash
+ai-context -gf path/to/example.env
+```
+
+Geniş izin:
+
+```bash
+ai-context -it --allow-sensitive
+```
+
+Bu seçenek gerçek sırları bir LLM'e göndermeden önce dikkatle kullanılmalıdır.
+
+## Parametreler
+
+### Mevcut seçenekler
+
+| Komut | Açıklama |
+|---|---|
+| `-c`, `--clipboard` | Sonucu panoya kopyalar |
+| `-tk`, `--tokens` | Tahmini token sayısını gösterir |
+| `-to`, `--tree-only` | Yalnızca klasör ağacını çıkarır |
+| `-ms`, `--max-size KB` | Boyut sınırını aşan dosyaları atlar |
+| `-i`, `--include-ext` | Ek uzantıları dahil eder |
+| `-t`, `--target` | Belirli dosya veya yolları hedefler |
+| `-u`, `--unsafe` | Bilinmeyen metin türlerini de dahil eder |
+| `-xd`, `--exclude-dir` | Klasörleri hariç tutar |
+| `-xf`, `--exclude-file` | Dosyaları hariç tutar |
+| `-xe`, `--exclude-ext` | Uzantıları hariç tutar |
+| `-git`, `--git-ignore` | Git görünür dosya listesini kullanır |
+| `-gf`, `--git-force` | Belirtilen dosyayı zorla dahil eder |
+
+### v1.4 seçenekleri
+
+| Komut | Açıklama |
+|---|---|
+| `-it`, `--interactive` | Akıllı keşif ve seçim ekranı |
+| `--budget TOKEN` | Token bütçesi, `0` sınırsız |
+| `--changed-only` | Yalnızca Git değişiklikleri |
+| `--allow-sensitive` | Hassas dosya seçimine izin verir |
+| `--no-auto-git` | Interaktif Git hızlandırmasını kapatır |
+| `--output KLASÖR` | Çıktı klasörünü belirler |
+| `--no-open` | Rapor klasörünü otomatik açmaz |
+| `--version` | Sürümü gösterir |
+
+## Mimari
+
+```text
+ai_context.py                 Eski kurulumlar için uyumluluk girişi
+ai_context_core/
+├── cli.py                    Komut satırı ve akış yönetimi
+├── scanner.py                Tek geçişli hızlı dosya keşfi
+├── git_tools.py              Git hızlandırması ve değişen dosyalar
+├── classifier.py             Proje, dosya ve güvenlik sınıflandırması
+├── selection.py              Interaktif seçim ve token bütçesi
+├── report.py                 Markdown raporu
+├── clipboard.py              Platformlar arası pano desteği
+├── config.py                 Güvenli varsayılanlar
+├── models.py                 Veri modelleri
+└── utils.py                  Yardımcı işlevler
+```
+
+## Test
+
+Standart kütüphane ile:
+
+```bash
+python -m unittest discover -s tests -v
+```
+
 MIT License. Created by Ahmet Çetin.
