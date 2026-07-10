@@ -4,21 +4,23 @@ build-backend = "setuptools.build_meta"
 
 [project]
 name = "ai-context"
-version = "1.3.18"  # Burayı 1.3.15 yaparak pip'in güncel kodu çekmesini sağlıyoruz
+version = "1.4.0"
 authors = [
-  { name="Ahmet Çetin" },
+  { name = "Ahmet Çetin" },
 ]
-description = "AI modelleri için proje dosyalarını metin belgesine dönüştüren yardımcı araç."
+description = "AI modelleri için hızlı, güvenli ve etkileşimli proje bağlamı üreticisi."
 readme = "README.md"
-requires-python = ">=3.7"
+requires-python = ">=3.8"
+license = { text = "MIT" }
 classifiers = [
-    "Programming Language :: Python :: 3",
-    "License :: OSI Approved :: MIT License",
-    "Operating System :: OS Independent",
+  "Programming Language :: Python :: 3",
+  "License :: OSI Approved :: MIT License",
+  "Operating System :: OS Independent",
 ]
 
 [project.scripts]
-ai-context = "ai_context:main"
+ai-context = "ai_context_core.cli:main"
 
 [tool.setuptools]
-py-modules = ["ai_context"] # Kodun 'python -m ai_context' olarak çalışmasını garanti eder
+py-modules = ["ai_context"]
+packages = ["ai_context_core"]

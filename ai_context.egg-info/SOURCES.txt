@@ -1,8 +1,0 @@
-README.md
-ai_context.py
-pyproject.toml
-ai_context.egg-info/PKG-INFO
-ai_context.egg-info/SOURCES.txt
-ai_context.egg-info/dependency_links.txt
-ai_context.egg-info/entry_points.txt
-ai_context.egg-info/top_level.txt
