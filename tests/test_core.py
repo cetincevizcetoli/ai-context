@@ -9,7 +9,12 @@ from ai_context_core.classifier import classify_file, detect_project_types
 from ai_context_core.config import LEGACY_ALLOWED_EXTS
 from ai_context_core.report import build_report_text
 from ai_context_core.scanner import scan_project
-from ai_context_core.selection import automatic_select, build_extension_groups, interactive_select
+from ai_context_core.selection import (
+    automatic_select,
+    build_extension_groups,
+    build_folder_groups,
+    interactive_select,
+)
 
 
 class AiContextTests(unittest.TestCase):
@@ -36,6 +41,7 @@ class AiContextTests(unittest.TestCase):
             targets=set(),
             max_size_kb=0,
             force_include=set(),
+            smart_map=False,
         )
         options.update(kwargs)
         return scan_project(str(self.root), **options)
@@ -214,6 +220,105 @@ class AiContextTests(unittest.TestCase):
         subprocess.run(["git", "commit", "-m", "initial"], cwd=self.root, check=True, stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
         scan = self.scan(changed_only=True)
         self.assertEqual(scan.files, [])
+
+
+    def test_smart_map_shows_pruned_directories_without_scanning_contents(self):
+        self.write("app/main.php", b"<?php echo 1;\n")
+        self.write("env/Lib/site-packages/noise.py", b"noise = True\n")
+        self.write("uploads/photo.png", b"PNG")
+        scan = self.scan(smart_map=True)
+        paths = {item.rel_path for item in scan.files}
+        self.assertIn("app/main.php", paths)
+        self.assertNotIn("env/Lib/site-packages/noise.py", paths)
+        dirs = {item.rel_path: item for item in scan.structure_entries if item.kind == "dir"}
+        self.assertTrue(dirs["env"].is_pruned)
+        self.assertTrue(dirs["uploads"].is_pruned)
+
+    def test_folder_plan_maps_assets_and_summarizes_runtime_folders(self):
+        self.write("app/main.php", b"<?php echo 1;\n")
+        self.write("assets/css/site.css", b"body{}\n")
+        self.write("assets/img/hero.webp", b"RIFFWEBP")
+        self.write("docs/architecture.md", b"# Architecture\n")
+        self.write(".agents/rules.md", b"# Rules\n")
+        self.write(".env", b"SECRET=value\n")
+        self.write("env/Lib/noise.py", b"noise=True\n")
+        self.write("uploads/photo.png", b"PNG")
+        scan = self.scan(smart_map=True)
+        with patch("sys.stdin.isatty", return_value=True), patch("builtins.input", return_value=""):
+            selection = interactive_select(
+                scan, budget=0, allow_sensitive=False, force_include=set(), map_limit=120
+            )
+        self.assertIn("app/main.php", selection.selected_paths)
+        self.assertIn("assets/css/site.css", selection.selected_paths)
+        self.assertNotIn("assets/img/hero.webp", selection.selected_paths)
+        self.assertIn("assets/img/hero.webp", selection.map_file_paths)
+        self.assertIn("docs/architecture.md", selection.map_file_paths)
+        self.assertNotIn("docs/architecture.md", selection.selected_paths)
+        self.assertIn("env", selection.summary_dirs)
+        self.assertIn("uploads", selection.summary_dirs)
+        self.assertIn(".env", selection.blocked_sensitive_paths)
+
+    def test_docs_file_can_be_picked_individually(self):
+        self.write("app/main.php", b"<?php echo 1;\n")
+        self.write("docs/architecture.md", b"# Architecture\n")
+        self.write("docs/old-notes.txt", b"old\n")
+        scan = self.scan(smart_map=True)
+        groups = build_folder_groups(scan)
+        docs_index = next(index for index, group in enumerate(groups, 1) if group.key == "docs")
+        answers = iter([str(docs_index), "5", "1", ""])
+        with patch("sys.stdin.isatty", return_value=True), patch("builtins.input", side_effect=lambda *_: next(answers)):
+            selection = interactive_select(
+                scan, budget=0, allow_sensitive=False, force_include=set(), map_limit=120
+            )
+        self.assertIn("docs/architecture.md", selection.selected_paths)
+        self.assertNotIn("docs/old-notes.txt", selection.selected_paths)
+        self.assertIn("docs/old-notes.txt", selection.map_file_paths)
+
+    def test_report_contains_full_map_but_only_selected_contents(self):
+        self.write("app/main.php", b"<?php echo 'APP';\n")
+        self.write("assets/img/hero.webp", b"RIFFWEBP")
+        self.write("docs/architecture.md", b"SECRET_DOC_TEXT\n")
+        self.write("env/Lib/noise.py", b"NOISE_CONTENT\n")
+        scan = self.scan(smart_map=True)
+        with patch("sys.stdin.isatty", return_value=True), patch("builtins.input", return_value=""):
+            selection = interactive_select(
+                scan, budget=0, allow_sensitive=False, force_include=set(), map_limit=120
+            )
+        text, content_count, _, _ = build_report_text(scan, selection, tree_only=False)
+        self.assertIn("hero.webp [BINARY - yalnızca dosya adı]", text)
+        self.assertIn("env/ [", text)
+        self.assertIn("architecture.md [yalnızca dosya adı]", text)
+        self.assertIn("<?php echo 'APP';", text)
+        self.assertNotIn("SECRET_DOC_TEXT", text)
+        self.assertNotIn("NOISE_CONTENT", text)
+        self.assertEqual(content_count, 1)
+
+    def test_markerless_php_project_is_detected(self):
+        self.write("index.php", b"<?php\n")
+        self.write("app/page.php", b"<?php\n")
+        scan = self.scan(smart_map=True)
+        self.assertIn("PHP", scan.project_types)
+
+
+    def test_git_smart_map_keeps_ignored_env_and_git_as_summary(self):
+        try:
+            subprocess.run(["git", "--version"], check=True, stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
+        except (OSError, subprocess.CalledProcessError):
+            self.skipTest("git bulunamadı")
+
+        subprocess.run(["git", "init"], cwd=self.root, check=True, stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
+        self.write(".gitignore", b"env/\n.env\n")
+        self.write("app/main.php", b"<?php echo 1;\n")
+        self.write("env/Lib/noise.py", b"noise=True\n")
+        self.write(".env", b"SECRET=x\n")
+        scan = self.scan(use_git=True, smart_map=True)
+        self.assertEqual(scan.scanner_name, "git")
+        self.assertNotIn("env/Lib/noise.py", {item.rel_path for item in scan.files})
+        dirs = {item.rel_path: item for item in scan.structure_entries if item.kind == "dir"}
+        self.assertTrue(dirs[".git"].is_pruned)
+        self.assertTrue(dirs["env"].is_pruned)
+        root_extra = {item.rel_path for item in scan.structure_entries if item.kind == "file"}
+        self.assertIn(".env", root_extra)
 
 
 if __name__ == "__main__":

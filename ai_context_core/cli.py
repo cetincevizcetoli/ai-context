@@ -33,12 +33,13 @@ def build_parser() -> argparse.ArgumentParser:
     legacy.add_argument("-git", "--git-ignore", action="store_true", help="Git görünür dosya listesini ve ignore kurallarını kullan")
     legacy.add_argument("-gf", "--git-force", nargs="+", default=[], help="Belirtilen yolu ignore/güvenlik filtresine rağmen zorla dahil et")
 
-    smart = parser.add_argument_group("v1.4 akıllı seçenekler")
-    smart.add_argument("-it", "--interactive", action="store_true", help="Hızlı uzantı keşfi ve etkileşimli seçim")
+    smart = parser.add_argument_group("v1.5 akıllı proje haritası seçenekleri")
+    smart.add_argument("-it", "--interactive", action="store_true", help="Klasör merkezli akıllı proje haritası ve etkileşimli seçim")
     smart.add_argument("--budget", type=int, default=50000, metavar="TOKEN", help="İçerik token bütçesi; 0 sınırsız (varsayılan: 50000)")
     smart.add_argument("--changed-only", action="store_true", help="Yalnızca Git'te değişen/yeni dosyaları al")
     smart.add_argument("--allow-sensitive", action="store_true", help="Hassas dosyaların seçilebilmesine izin ver")
     smart.add_argument("--no-auto-git", action="store_true", help="Interaktif modda otomatik Git hızlandırmasını kapat")
+    smart.add_argument("--map-limit", type=int, default=120, metavar="ADET", help="Klasör başına haritada gösterilecek azami dosya adı; 0 sınırsız (varsayılan: 120)")
     smart.add_argument("--output", default="", help="Rapor çıktı klasörü")
     smart.add_argument("--no-open", action="store_true", help="Rapor klasörünü otomatik açma")
     smart.add_argument("--version", action="version", version=f"%(prog)s {VERSION}")
@@ -84,6 +85,7 @@ def main(argv: Optional[Sequence[str]] = None) -> int:
             targets=targets,
             max_size_kb=max(0, args.max_size),
             force_include=force_include,
+            smart_map=args.interactive,
         )
 
         if args.interactive:
@@ -92,6 +94,7 @@ def main(argv: Optional[Sequence[str]] = None) -> int:
                 budget=max(0, args.budget),
                 allow_sensitive=args.allow_sensitive,
                 force_include=force_include,
+                map_limit=max(0, args.map_limit),
             )
         else:
             # Geriye uyum: bütçe yalnızca kullanıcı açıkça --budget yazdıysa uygulanır.
@@ -108,8 +111,8 @@ def main(argv: Optional[Sequence[str]] = None) -> int:
                 budget=automatic_budget,
             )
 
-        if not selection.selected_paths:
-            print("Seçime uyan dosya bulunamadı.")
+        if not selection.selected_paths and not selection.map_file_paths and not selection.summary_dirs:
+            print("Seçime uyan dosya veya proje haritası öğesi bulunamadı.")
             if selection.blocked_sensitive_paths:
                 print(f"{len(selection.blocked_sensitive_paths)} hassas dosya güvenlik nedeniyle engellendi.")
             return 1
@@ -123,7 +126,7 @@ def main(argv: Optional[Sequence[str]] = None) -> int:
         )
 
         print(f"\nRapor kaydedildi: {filename}")
-        print(f"Tarayıcı: {summary.scanner_name} | Dosya: {summary.file_count} | İçerik: {summary.content_count}")
+        print(f"Tarayıcı: {summary.scanner_name} | Harita: {summary.map_file_count} | Seçilen: {summary.file_count} | İçerik: {summary.content_count}")
         if summary.binary_count:
             print(f"Binary: {summary.binary_count}")
         if summary.names_only_count:

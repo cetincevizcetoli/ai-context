@@ -14,12 +14,40 @@ CODE_EXTENSIONS: Set[str] = {
     ".swift", ".dart", ".lua", ".r", ".pl", ".pm", ".ex", ".exs",
 }
 
+# These directories are shown in the project map, but their contents are not
+# traversed by default. This keeps the map truthful without walking dependency,
+# cache, upload or repository internals.
 DEFAULT_IGNORE_DIRS: Set[str] = {
     ".git", ".hg", ".svn", "venv", ".venv", "env", ".envdir", "node_modules",
     "__pycache__", "vendor", "tmp", "temp", "dist", "build", ".idea", ".vscode",
     "reports", "ai-reports", "log", "logs", ".pytest_cache", ".mypy_cache",
     ".ruff_cache", ".tox", ".nox", "coverage", ".coverage", "target", "out",
     ".next", ".nuxt", ".cache", ".parcel-cache", ".turbo", "site-packages",
+}
+
+# Common project folders that are usually important as a fact, but expensive or
+# noisy to enumerate. They are suggested as SUMMARY in interactive mode.
+SUMMARY_FOLDER_NAMES: Set[str] = {
+    *DEFAULT_IGNORE_DIRS,
+    "uploads", "upload", "backups", "backup", "_backups", "archive", "archives",
+    "arsiv", "arşiv", "media-cache", "cache", "storage", "runtime", "sessions",
+}
+
+CONTENT_FOLDER_NAMES: Set[str] = {
+    "app", "src", "source", "config", "includes", "include", "controllers",
+    "controller", "models", "model", "views", "view", "templates", "template",
+    "routes", "migrations", "database", "db", "api", "lib", "core", "modules",
+    "services", "service", "components", "pages", "layouts", "commands",
+}
+
+MIXED_FOLDER_NAMES: Set[str] = {
+    "assets", "static", "public", "resources", "frontend", "front-end", "themes",
+    "theme", "web", "www", "htdocs", "tests", "test", "spec", "mocap",
+}
+
+LIST_FOLDER_NAMES: Set[str] = {
+    "docs", "doc", "documentation", ".agents", "agents", ".github", "tools",
+    "scripts", "notes", "examples", "example", "samples", "sample",
 }
 
 DEFAULT_IGNORE_FILE_NAMES: Set[str] = {
@@ -51,7 +79,8 @@ SPECIAL_TEXT_FILENAMES: Set[str] = {
     "vite.config.js", "vite.config.ts", "webpack.config.js", "composer.json",
     "Cargo.toml", "go.mod", "go.sum", "pom.xml", "build.gradle",
     "build.gradle.kts", "Gemfile", "mix.exs", "pubspec.yaml", ".htaccess",
-    ".editorconfig", ".gitignore", ".dockerignore",
+    ".editorconfig", ".gitignore", ".dockerignore", "manifest.json",
+    "deploy-manifest.json", "vercel.json", "netlify.toml",
 }
 
 SENSITIVE_EXACT_NAMES: Set[str] = {
@@ -93,6 +122,8 @@ PROJECT_RECOMMENDED_EXTS = {
     "Python": {".py", ".pyi", ".html", ".jinja", ".jinja2", ".sql"},
     "Node.js": {".js", ".mjs", ".cjs", ".ts", ".tsx", ".jsx", ".vue", ".html", ".css", ".scss"},
     "PHP / Composer": {".php", ".inc", ".module", ".twig", ".html", ".js", ".css", ".sql"},
+    "PHP": {".php", ".inc", ".module", ".twig", ".html", ".js", ".css", ".sql"},
+    "JavaScript / TypeScript": {".js", ".mjs", ".cjs", ".ts", ".tsx", ".jsx", ".vue", ".html", ".css", ".scss"},
     "Rust": {".rs", ".toml"},
     "Go": {".go", ".mod", ".sum"},
     "Java / Maven": {".java", ".xml", ".properties"},
@@ -101,4 +132,13 @@ PROJECT_RECOMMENDED_EXTS = {
     "Elixir": {".ex", ".exs"},
     "Dart / Flutter": {".dart", ".yaml"},
     "Docker": {".dockerfile", ".yml", ".yaml"},
+}
+
+MODE_LABELS: Dict[str, str] = {
+    "content": "İÇERİK",
+    "mixed": "KARMA",
+    "list": "LİSTE",
+    "summary": "ÖZET",
+    "pick": "SEÇİLİ",
+    "hide": "GİZLE",
 }

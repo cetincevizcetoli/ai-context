@@ -1,11 +1,14 @@
 import os
-from typing import List, Set, Tuple
+from typing import Dict, List, Set, Tuple
 
-from .classifier import classify_file, default_selection, detect_project_types
-from .config import DEFAULT_IGNORE_DIRS
+from .classifier import classify_file, default_selection, detect_project_types, is_sensitive_path
+from .config import DEFAULT_IGNORE_DIRS, SUMMARY_FOLDER_NAMES
 from .git_tools import changed_git_files, is_git_repo, list_git_visible_files
-from .models import FileRecord, ScanResult
+from .models import FileRecord, ScanResult, StructureEntry
 from .utils import extension_for_name, is_subpath_of, normalize_rel_path
+
+
+_STRUCTURE_COUNT_LIMIT = 250
 
 
 def _matches_target(rel_path: str, targets: Set[str]) -> bool:
@@ -15,7 +18,15 @@ def _matches_target(rel_path: str, targets: Set[str]) -> bool:
     return name in targets or rel_path in targets or any(is_subpath_of(rel_path, target) for target in targets)
 
 
-def _filesystem_paths(root_path: str, excluded_dirs: Set[str]) -> Tuple[List[str], Set[str]]:
+def _dir_is_excluded(name: str, rel_path: str, excluded_dirs: Set[str], *, smart_map: bool) -> bool:
+    if name in DEFAULT_IGNORE_DIRS:
+        return True
+    if smart_map and name.lower() in {item.lower() for item in SUMMARY_FOLDER_NAMES}:
+        return True
+    return name in excluded_dirs or rel_path in excluded_dirs or any(is_subpath_of(rel_path, item) for item in excluded_dirs)
+
+
+def _filesystem_paths(root_path: str, excluded_dirs: Set[str], *, smart_map: bool) -> Tuple[List[str], Set[str]]:
     paths: List[str] = []
     skipped_dirs: Set[str] = set()
     stack: List[Tuple[str, str]] = [(root_path, "")]
@@ -28,7 +39,7 @@ def _filesystem_paths(root_path: str, excluded_dirs: Set[str]) -> Tuple[List[str
                     rel_path = normalize_rel_path(os.path.join(rel_dir, entry.name))
                     try:
                         if entry.is_dir(follow_symlinks=False):
-                            if entry.name in DEFAULT_IGNORE_DIRS or entry.name.startswith(".") or entry.name in excluded_dirs or rel_path in excluded_dirs:
+                            if _dir_is_excluded(entry.name, rel_path, excluded_dirs, smart_map=smart_map):
                                 skipped_dirs.add(rel_path)
                                 continue
                             stack.append((entry.path, rel_path))
@@ -40,6 +51,113 @@ def _filesystem_paths(root_path: str, excluded_dirs: Set[str]) -> Tuple[List[str
             if rel_dir:
                 skipped_dirs.add(rel_dir)
     return paths, skipped_dirs
+
+
+def _sample_directory(abs_path: str) -> Tuple[int, int, bool]:
+    files = 0
+    dirs = 0
+    capped = False
+    try:
+        with os.scandir(abs_path) as entries:
+            for index, entry in enumerate(entries, 1):
+                if index > _STRUCTURE_COUNT_LIMIT:
+                    capped = True
+                    break
+                try:
+                    if entry.is_dir(follow_symlinks=False):
+                        dirs += 1
+                    elif entry.is_file(follow_symlinks=False):
+                        files += 1
+                except OSError:
+                    continue
+    except (OSError, PermissionError):
+        capped = True
+    return files, dirs, capped
+
+
+def _discover_structure(
+    root_path: str,
+    excluded_dirs: Set[str],
+    *,
+    smart_map: bool,
+) -> Tuple[List[StructureEntry], Set[str]]:
+    """Discover directory names without reading file contents.
+
+    Pruned directories are recorded and sampled only at their first level. This
+    exposes facts such as ``env/`` or ``.git/`` while avoiding a walk through
+    dependency trees, uploads, caches and repository internals.
+    """
+
+    entries: Dict[Tuple[str, str], StructureEntry] = {}
+    skipped: Set[str] = set()
+    stack: List[Tuple[str, str]] = [(root_path, "")]
+
+    while stack:
+        abs_dir, rel_dir = stack.pop()
+        try:
+            with os.scandir(abs_dir) as children:
+                for child in children:
+                    rel_path = normalize_rel_path(os.path.join(rel_dir, child.name))
+                    try:
+                        if child.is_dir(follow_symlinks=False):
+                            is_pruned = _dir_is_excluded(child.name, rel_path, excluded_dirs, smart_map=smart_map)
+                            if is_pruned:
+                                file_count, dir_count, capped = _sample_directory(child.path)
+                                reason = "kullanıcı tarafından hariç tutuldu" if (
+                                    child.name in excluded_dirs or rel_path in excluded_dirs
+                                ) else "özet klasör; içerik taranmadı"
+                                entries[("dir", rel_path)] = StructureEntry(
+                                    rel_path=rel_path,
+                                    name=child.name,
+                                    kind="dir",
+                                    is_pruned=True,
+                                    reason=reason,
+                                    immediate_file_count=file_count,
+                                    immediate_dir_count=dir_count,
+                                    count_capped=capped,
+                                )
+                                skipped.add(rel_path)
+                                continue
+
+                            entries[("dir", rel_path)] = StructureEntry(
+                                rel_path=rel_path,
+                                name=child.name,
+                                kind="dir",
+                            )
+                            stack.append((child.path, rel_path))
+                            continue
+
+                        if child.is_file(follow_symlinks=False):
+                            # Root files and sensitive files are useful structural
+                            # facts even when Git ignores them. Do not read them.
+                            if not rel_dir or is_sensitive_path(rel_path):
+                                try:
+                                    stat = child.stat(follow_symlinks=False)
+                                    size = stat.st_size
+                                except OSError:
+                                    size = 0
+                                entries[("file", rel_path)] = StructureEntry(
+                                    rel_path=rel_path,
+                                    name=child.name,
+                                    kind="file",
+                                    size_bytes=size,
+                                    is_sensitive=is_sensitive_path(rel_path),
+                                )
+                    except OSError:
+                        continue
+        except (OSError, PermissionError):
+            if rel_dir:
+                skipped.add(rel_dir)
+                entries[("dir", rel_dir)] = StructureEntry(
+                    rel_path=rel_dir,
+                    name=os.path.basename(rel_dir),
+                    kind="dir",
+                    is_pruned=True,
+                    reason="erişim sağlanamadı",
+                    count_capped=True,
+                )
+
+    return sorted(entries.values(), key=lambda item: (item.rel_path.lower(), item.kind)), skipped
 
 
 def scan_project(
@@ -54,9 +172,18 @@ def scan_project(
     targets: Set[str],
     max_size_kb: int,
     force_include: Set[str],
+    smart_map: bool = False,
 ) -> ScanResult:
     root_path = os.path.abspath(root_path)
     result = ScanResult(root_path=root_path)
+
+    structure_entries, structure_skipped = _discover_structure(
+        root_path,
+        excluded_dirs,
+        smart_map=smart_map,
+    )
+    result.structure_entries = structure_entries
+    result.skipped_dirs.update(structure_skipped)
 
     git_repo = is_git_repo(root_path)
     should_use_git = git_repo and (use_git or auto_git or changed_only)
@@ -66,11 +193,13 @@ def scan_project(
             rel_paths = list_git_visible_files(root_path)
             result.scanner_name = "git"
         except RuntimeError as exc:
-            rel_paths, result.skipped_dirs = _filesystem_paths(root_path, excluded_dirs)
+            rel_paths, skipped = _filesystem_paths(root_path, excluded_dirs, smart_map=smart_map)
+            result.skipped_dirs.update(skipped)
             result.scanner_name = "filesystem-fallback"
             result.warnings.append(f"Git taraması kullanılamadı: {exc}")
     else:
-        rel_paths, result.skipped_dirs = _filesystem_paths(root_path, excluded_dirs)
+        rel_paths, skipped = _filesystem_paths(root_path, excluded_dirs, smart_map=smart_map)
+        result.skipped_dirs.update(skipped)
         result.scanner_name = "filesystem"
         if use_git and not git_repo:
             result.warnings.append("-git istendi fakat geçerli Git deposu bulunamadı; dosya sistemi taraması kullanıldı.")
@@ -99,6 +228,10 @@ def scan_project(
         if not rel_path:
             continue
         if any(is_subpath_of(rel_path, item) for item in excluded_dirs):
+            continue
+        if smart_map and any(is_subpath_of(rel_path, item) for item in result.skipped_dirs):
+            # A Git repository may track files under a directory that the smart
+            # map intentionally treats as summary-only (for example uploads/).
             continue
         name = os.path.basename(rel_path)
         extension = extension_for_name(name)

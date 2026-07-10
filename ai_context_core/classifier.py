@@ -1,5 +1,6 @@
 import fnmatch
 import os
+from collections import Counter
 from typing import Iterable, List, Set, Tuple
 
 from .config import (
@@ -70,11 +71,28 @@ def classify_file(rel_path: str) -> Tuple[str, bool, bool]:
 
 
 def detect_project_types(rel_paths: Iterable[str]) -> List[str]:
-    names = {os.path.basename(path) for path in rel_paths}
+    paths = list(rel_paths)
+    names = {os.path.basename(path) for path in paths}
     detected: List[str] = []
     for project_type, markers in PROJECT_MARKERS.items():
         if names.intersection(markers):
             detected.append(project_type)
+
+    extension_counts = Counter(extension_for_name(os.path.basename(path)) for path in paths)
+    # Marker-less projects are common, especially small PHP sites. Add careful
+    # heuristics so the interactive recommendations do not fall back to "Genel".
+    if extension_counts[".php"] >= 2 and not any(item.startswith("PHP") for item in detected):
+        detected.append("PHP")
+    if extension_counts[".py"] >= 2 and "Python" not in detected:
+        detected.append("Python")
+    js_total = sum(extension_counts[ext] for ext in (".js", ".mjs", ".cjs", ".ts", ".tsx", ".jsx", ".vue"))
+    if js_total >= 3 and "Node.js" not in detected:
+        detected.append("JavaScript / TypeScript")
+    if extension_counts[".go"] >= 2 and "Go" not in detected:
+        detected.append("Go")
+    if extension_counts[".rs"] >= 2 and "Rust" not in detected:
+        detected.append("Rust")
+
     return detected or ["Genel / Karma"]
 
 
